@@ -1,0 +1,76 @@
+add_meal:
+  name: Aggiungi pasto
+  description: >-
+    Registra un pasto nel diario. Non calcola né consiglia dosi di insulina:
+    salva solo carboidrati e tipo di pasto, come dalla scheda Pasti dell'app.
+  fields:
+    meal_type:
+      name: Tipo di pasto
+      required: true
+      selector:
+        select:
+          options:
+            - colazione
+            - spuntino
+            - pranzo
+            - merenda
+            - cena
+            - fuori_pasto
+    carbs:
+      name: Carboidrati (g)
+      description: Facoltativo se il pasto nasce vuoto (es. per aggiungere una foto dopo).
+      selector:
+        number:
+          min: 0
+          max: 500
+          unit_of_measurement: g
+    description:
+      name: Descrizione
+      selector:
+        text:
+    note:
+      name: Nota
+      selector:
+        text:
+
+refresh:
+  name: Aggiorna da Glooko
+  description: Forza subito una sincronizzazione con Glooko, come il bottone "Aggiorna ora" nell'app.
+
+generate_report:
+  name: Genera report PDF
+  description: Genera il report per il diabetologo (formato AGP) sugli ultimi N giorni.
+  fields:
+    days:
+      name: Giorni
+      required: true
+      default: 30
+      selector:
+        select:
+          options:
+            - "14"
+            - "30"
+            - "90"
+
+add_note:
+  name: Aggiungi nota
+  description: >-
+    Registra una nota nel diario (es. cambio set, sintomo, attività), visibile
+    nella scheda Giorno e nel report PDF.
+  fields:
+    text:
+      name: Testo
+      required: true
+      selector:
+        text:
+    kind:
+      name: Tipo
+      default: altro
+      selector:
+        select:
+          options:
+            - sintomo
+            - attivita
+            - malattia
+            - visita
+            - altro

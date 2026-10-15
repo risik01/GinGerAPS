@@ -1,0 +1,31 @@
+configuration:
+  glooko_email:
+    name: Glooko email
+    description: The Glooko account CamAPS FX shares its data with.
+  glooko_password:
+    name: Glooko password
+    description: Stored only in this add-on's configuration.
+  glooko_server:
+    name: Glooko server
+    description: eu for European accounts.
+  sync_minuti:
+    name: Sync every (minutes)
+    description: CamAPS uploads to Glooko every few hours, so 30 minutes is enough.
+  giorni_iniziali:
+    name: Days to fetch on first sync
+    description: How much history to download the first time.
+  off_contatto:
+    name: Open Food Facts contact email (optional)
+    description: Sent in the User-Agent of Open Food Facts requests, as their API asks.
+  anthropic_api_key:
+    name: Anthropic API key (optional)
+    description: Only needed for nutrition estimates from meal photos. Create one at console.anthropic.com, a separate account from your Claude subscription. Leave empty to keep that feature off.
+  ia_modello:
+    name: Model for photo-based estimates
+    description: claude-sonnet-5 is the most accurate, claude-haiku-4-5-20251001 is cheaper and faster.
+  passi_entity_id:
+    name: Home Assistant entity for steps
+    description: The entity holding today's step count (e.g. from a smartwatch). Leave the default if you haven't changed it.
+  modalita_demo:
+    name: Demo mode
+    description: Generates about 30 days of synthetic data to try the interface without a real Glooko/Nightscout account. Turn off before using real data.

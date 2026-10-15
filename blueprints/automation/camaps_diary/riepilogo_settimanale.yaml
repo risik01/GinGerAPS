@@ -1,0 +1,48 @@
+blueprint:
+  name: "Diario CamAPS: riepilogo settimanale"
+  description: >-
+    Invia il riepilogo della settimana appena conclusa: tempo nel range
+    rispetto alla settimana prima, fasce orarie con più iper/ipo, pasto con la
+    salita maggiore e quello con la risposta migliore, dati mancanti. Sono
+    osservazioni descrittive calcolate dai numeri: mai consigli di dose o di
+    terapia.
+  domain: automation
+  input:
+    sensore_insight:
+      name: Sensore "Insight settimanale"
+      selector:
+        entity:
+          filter:
+            - integration: camaps_diary
+    ora_invio:
+      name: Ora di invio
+      default: "08:00:00"
+      selector:
+        time: {}
+    notifica:
+      name: Azione di notifica
+      description: >-
+        Nell'azione puoi usare la variabile "messaggio" (tra doppie parentesi
+        graffe) per il testo con tutte le osservazioni della settimana, una
+        per riga.
+      selector:
+        action: {}
+
+mode: single
+
+triggers:
+  - trigger: time
+    at: !input ora_invio
+
+conditions:
+  - condition: time
+    weekday:
+      - mon
+
+variables:
+  sensore_insight: !input sensore_insight
+  messaggio: >-
+    {{ state_attr(sensore_insight, 'frasi') | default([states(sensore_insight)]) | join('\n') }}
+
+actions:
+  - !input notifica

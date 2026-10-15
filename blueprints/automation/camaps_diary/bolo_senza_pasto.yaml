@@ -1,0 +1,55 @@
+blueprint:
+  name: "Diario CamAPS: bolo senza pasto registrato"
+  description: >-
+    Avvisa se dopo un bolo del microinfusore non risulta ancora un pasto
+    registrato nel diario, entro il tempo scelto. Solo un avviso descrittivo:
+    non calcola né consiglia dosi di insulina.
+  domain: automation
+  input:
+    sensore_bolo:
+      name: Sensore "Ultimo bolo"
+      description: L'entità sensore "Ultimo bolo" della integrazione Diario CamAPS.
+      selector:
+        entity:
+          filter:
+            - integration: camaps_diary
+    sensore_pasto:
+      name: Sensore "Ultimo pasto"
+      description: L'entità sensore "Ultimo pasto" della integrazione Diario CamAPS.
+      selector:
+        entity:
+          filter:
+            - integration: camaps_diary
+    minuti_attesa:
+      name: Minuti di attesa
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 180
+          unit_of_measurement: minuti
+    notifica:
+      name: Azione di notifica
+      description: Cosa fare se dopo il bolo non c'è ancora un pasto registrato.
+      selector:
+        action: {}
+
+mode: parallel
+max: 10
+
+triggers:
+  - trigger: state
+    entity_id: !input sensore_bolo
+
+variables:
+  sensore_pasto: !input sensore_pasto
+  bolo_ts: "{{ trigger.to_state.state }}"
+
+actions:
+  - delay:
+      minutes: !input minuti_attesa
+  - condition: template
+    value_template: >-
+      {{ states(sensore_pasto) in ['unknown', 'unavailable'] or
+         as_timestamp(states(sensore_pasto)) < as_timestamp(bolo_ts) }}
+  - !input notifica

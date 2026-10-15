@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Diario CamAPS",
+        "description": "Collega la integrazione all'add-on locale Diario CamAPS.",
+        "data": {
+          "base_url": "Indirizzo dell'add-on"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile raggiungere l'add-on a quell'indirizzo."
+    },
+    "abort": {
+      "already_configured": "Diario CamAPS e' gia' configurato."
+    }
+  }
+}

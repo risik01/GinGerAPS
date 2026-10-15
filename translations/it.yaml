@@ -1,0 +1,31 @@
+configuration:
+  glooko_email:
+    name: Email Glooko
+    description: L'account Glooko a cui CamAPS FX invia i dati (Menu di CamAPS, Condividi, Glooko).
+  glooko_password:
+    name: Password Glooko
+    description: Resta salvata solo nella configurazione di questo add-on.
+  glooko_server:
+    name: Server Glooko
+    description: eu per gli account europei.
+  sync_minuti:
+    name: Aggiornamento ogni (minuti)
+    description: CamAPS carica su Glooko a intervalli di ore, quindi 30 minuti bastano.
+  giorni_iniziali:
+    name: Giorni da recuperare la prima volta
+    description: Quanti giorni di storico scaricare alla prima sincronizzazione.
+  off_contatto:
+    name: Email per Open Food Facts (facoltativa)
+    description: Open Food Facts chiede un contatto nelle richieste delle app. Se la lasci vuota le ricerche funzionano lo stesso.
+  anthropic_api_key:
+    name: Chiave API Anthropic (facoltativa)
+    description: Serve solo per la stima nutrizionale dalle foto dei pasti. Creala su console.anthropic.com, account separato dal tuo abbonamento Claude. Se la lasci vuota quella funzione resta disattivata.
+  ia_modello:
+    name: Modello per la stima dalle foto
+    description: claude-sonnet-5 e' il piu' accurato, claude-haiku-4-5-20251001 e' piu' economico e veloce.
+  passi_entity_id:
+    name: Entita' Home Assistant per i passi
+    description: L'entita' che contiene i passi di oggi (es. da uno smartwatch). Lascia il valore predefinito se non l'hai cambiata.
+  modalita_demo:
+    name: Modalita' demo
+    description: Genera circa 30 giorni di dati sintetici per provare l'interfaccia senza un vero account Glooko/Nightscout. Disattivala per usare dati reali.

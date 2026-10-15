@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0e9f8e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Diario CamAPS">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+  <link rel="icon" href="static/icon-192.png">
+  <title>Diario CamAPS</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Giorno -->
+    <section class="view" id="view-giorno" aria-labelledby="day-title">
+      <header class="day-head">
+        <button class="icon-btn" id="day-prev" aria-label="Giorno precedente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <label class="day-title-wrap">
+          <h1 id="day-title">Oggi</h1>
+          <input type="date" id="day-picker" aria-label="Scegli il giorno">
+        </label>
+        <button class="icon-btn" id="day-next" aria-label="Giorno successivo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </header>
+      <p class="freshness" id="freshness"></p>
+
+      <div class="day-content" id="day-content">
+        <div class="chart-wrap">
+          <p class="readout" id="readout" aria-live="polite"></p>
+          <div id="chart" class="chart"></div>
+          <ul class="legend" aria-hidden="true">
+            <li><i class="sw sw-glu"></i>Glicemia</li>
+            <li><i class="sw sw-ins"></i>Bolo</li>
+            <li><i class="sw sw-basal"></i>Basale</li>
+            <li><i class="sw sw-carb"></i>Pasto</li>
+            <li><i class="sw sw-off"></i>Fuori automatico</li>
+          </ul>
+        </div>
+
+        <dl class="figures" id="figures"></dl>
+
+        <div class="log-head"><h2>Note del giorno</h2></div>
+        <ul class="notes-list" id="day-notes"></ul>
+        <form class="note-form" id="note-form">
+          <select id="note-kind" aria-label="Tipo di nota">
+            <option value="sintomo">Sintomo</option>
+            <option value="attivita">Attività</option>
+            <option value="malattia">Malattia</option>
+            <option value="visita">Visita</option>
+            <option value="altro" selected>Altro</option>
+          </select>
+          <input type="text" id="note-text" placeholder="Aggiungi una nota (es. febbre, corsa 5km, cambio set)…" autocomplete="off">
+          <button type="submit" class="secondary">Aggiungi</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Calendario -->
+    <section class="view" id="view-calendario" hidden aria-labelledby="cal-title">
+      <header class="day-head">
+        <button class="icon-btn" id="cal-prev" aria-label="Mese precedente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <h1 id="cal-title">Ottobre 2026</h1>
+        <button class="icon-btn" id="cal-next" aria-label="Mese successivo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </header>
+      <input type="search" class="search" id="cal-search" placeholder="Cerca nel diario (es. pizza)" autocomplete="off">
+      <ul class="food-list" id="cal-search-results" hidden></ul>
+      <div class="cal-weekdays">
+        <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <ul class="legend" aria-hidden="true">
+        <li><i class="sw" style="background:var(--inrange)"></i>Giornata buona (≥70% nel range)</li>
+        <li><i class="sw" style="background:var(--high)"></i>Da rivedere (40–70%)</li>
+        <li><i class="sw" style="background:var(--low)"></i>Fuori range (&lt;40%)</li>
+      </ul>
+    </section>
+
+    <!-- Pasti -->
+    <section class="view" id="view-pasti" hidden aria-labelledby="pasti-title">
+      <header class="day-head">
+        <button class="icon-btn" id="pasti-day-prev" aria-label="Giorno precedente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <label class="day-title-wrap">
+          <h1 id="pasti-title">Oggi</h1>
+          <input type="date" id="pasti-day-picker" aria-label="Scegli il giorno">
+        </label>
+        <button class="icon-btn" id="pasti-day-next" aria-label="Giorno successivo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </header>
+      <div class="day-content" id="pasti-content">
+        <div class="meal-tiles" id="log"></div>
+        <ul class="log-extra" id="log-extra" hidden></ul>
+      </div>
+      <div class="add-bar">
+        <button class="primary" id="add-meal">Aggiungi pasto</button>
+      </div>
+    </section>
+
+    <!-- Andamento -->
+    <section class="view" id="view-andamento" hidden aria-labelledby="trend-title">
+      <header class="page-head">
+        <h1 id="trend-title">Andamento</h1>
+        <div class="seg" role="group" aria-label="Periodo">
+          <button data-days="7" aria-pressed="true">7 giorni</button>
+          <button data-days="14" aria-pressed="false">14</button>
+          <button data-days="30" aria-pressed="false">30</button>
+        </div>
+      </header>
+
+      <div class="week-zone">
+        <div class="week-head">
+          <h2>Settimana</h2>
+          <span class="muted" id="week-range"></span>
+        </div>
+        <ul class="week-frasi" id="week-frasi"></ul>
+        <p class="fineprint">Osservazioni descrittive calcolate dai numeri della settimana: non sono
+          consigli di dose o di terapia.</p>
+      </div>
+
+      <div class="chart-wrap">
+        <div id="agp-chart" class="chart"></div>
+        <ul class="legend" aria-hidden="true">
+          <li><i class="sw" style="background:var(--ink)"></i>Mediana</li>
+          <li><i class="sw" style="background:var(--ink);opacity:.35"></i>25°–75° percentile</li>
+          <li><i class="sw" style="background:var(--ink);opacity:.18"></i>10°–90° percentile</li>
+        </ul>
+      </div>
+      <dl class="figures" id="trend-figures"></dl>
+      <div class="trend-chart" id="trend-chart"></div>
+      <ul class="trend-cards" id="trend-cards"></ul>
+      <div class="table-wrap">
+        <table class="trend" id="trend-table"></table>
+      </div>
+      <p class="fineprint">Carboidrati in grammi, insulina in unità. In grigio i giorni con meno del 70% di
+        letture del sensore: non entrano nelle medie.</p>
+
+      <div class="report-zone">
+        <h2>Report per il diabetologo</h2>
+        <div class="seg-report" role="group" aria-label="Periodo del report">
+          <button type="button" data-report-days="14" aria-pressed="true">14 giorni</button>
+          <button type="button" data-report-days="30" aria-pressed="false">30 giorni</button>
+          <button type="button" data-report-days="90" aria-pressed="false">90 giorni</button>
+          <button type="button" data-report-days="visita" aria-pressed="false">Dall'ultima visita</button>
+        </div>
+        <button class="primary" id="report-genera">
+          <span class="spinner" hidden></span>
+          <span class="btn-label">Genera report PDF</span>
+        </button>
+        <div class="report-result" id="report-result" hidden></div>
+        <p class="fineprint">Strumento di registrazione e visualizzazione. Non fornisce indicazioni
+          terapeutiche. Le stime nutrizionali sono approssimative.</p>
+      </div>
+    </section>
+
+    <!-- Impostazioni (Stato + Database alimenti) -->
+    <section class="view" id="view-stato" hidden aria-labelledby="status-title">
+      <header class="page-head">
+        <h1 id="status-title">Impostazioni</h1>
+      </header>
+      <div class="settings-tabs" role="tablist" aria-label="Impostazioni">
+        <button type="button" role="tab" aria-selected="true" data-settings-tab="stato">Stato</button>
+        <button type="button" role="tab" aria-selected="false" data-settings-tab="alimenti">Database alimenti</button>
+      </div>
+
+      <div data-settings-panel="stato">
+        <div class="status-card">
+          <div id="status-top"></div>
+          <div class="status-actions">
+            <button class="primary" id="sync-now">
+              <span class="spinner" hidden></span>
+              <span class="btn-label">Aggiorna ora da Glooko</span>
+            </button>
+            <button class="secondary" id="ciqual-import" hidden>Scarica la tabella alimenti</button>
+            <button class="secondary" id="off-import" hidden>Importa prodotti italiani (Open Food Facts)</button>
+          </div>
+        </div>
+        <div class="status-secondary" id="status-secondary"></div>
+        <p class="fineprint">Alimenti generici: tabella Ciqual dell'ANSES (dati aperti). Prodotti confezionati:
+          Open Food Facts (licenza ODbL).
+          I numeri del diario servono a rivedere l'andamento: non sostituiscono le indicazioni del tuo
+          diabetologo.</p>
+
+        <div class="status-card">
+          <h2>Sorgente dati</h2>
+          <div class="chips" id="source-type" role="radiogroup" aria-label="Sorgente dati">
+            <button type="button" role="radio" aria-checked="true" data-source="glooko">Glooko</button>
+            <button type="button" role="radio" aria-checked="false" data-source="nightscout">Nightscout</button>
+            <button type="button" role="radio" aria-checked="false" data-source="xdrip">xDrip+</button>
+          </div>
+          <div id="source-nightscout-fields" hidden>
+            <label class="field">Indirizzo Nightscout
+              <input type="url" id="source-nightscout-url" placeholder="https://il-tuo-sito.herokuapp.com" autocomplete="off">
+            </label>
+            <label class="field">Token (facoltativo)
+              <input type="text" id="source-nightscout-token" placeholder="dal pannello Admin Tools di Nightscout" autocomplete="off">
+            </label>
+          </div>
+          <div id="source-xdrip-fields" hidden>
+            <label class="field">Indirizzo del servizio web di xDrip+
+              <input type="url" id="source-xdrip-url" placeholder="http://192.168.1.50:17580" autocomplete="off">
+            </label>
+          </div>
+          <p class="form-error" id="source-error" role="alert"></p>
+          <div class="status-actions">
+            <button class="secondary" id="source-test">Testa connessione</button>
+            <button class="primary" id="source-save">Salva sorgente</button>
+          </div>
+          <p class="fineprint">Nightscout e xDrip+ non sono state verificate con un server reale in questa
+            casa (qui si usa Glooko): se le provi e qualcosa non va, fallo sapere.</p>
+        </div>
+
+        <div class="status-card">
+          <h2>Per la prossima visita</h2>
+          <label class="field">Data ultima visita
+            <input type="date" id="visit-last-date">
+          </label>
+          <label class="field">Domande per il diabetologo
+            <textarea id="visit-questions" rows="3"
+              placeholder="Annotale qui: finiscono in fondo al prossimo report PDF e si svuotano dopo l'esportazione"></textarea>
+          </label>
+          <button class="secondary" id="visit-save">Salva</button>
+        </div>
+      </div>
+
+      <div data-settings-panel="alimenti" hidden>
+        <div class="sticky-head">
+          <header class="page-head">
+            <h1 id="foods-title">I tuoi alimenti</h1>
+            <button class="secondary" id="food-new">Nuovo alimento</button>
+          </header>
+          <input type="search" class="search" id="food-search" placeholder="Cerca per nome o marca" autocomplete="off">
+        </div>
+        <div class="off-zone">
+          <button class="chip-btn" id="food-off">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Open Food Facts
+          </button>
+          <button class="chip-btn" id="food-barcode">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14M8 5v14M12 5v14M14 5v14M18 5v14M21 5v14"/></svg>
+            Codice a barre
+          </button>
+        </div>
+        <ul class="food-list" id="food-off-list"></ul>
+        <div class="empty" id="food-landing">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v7a3 3 0 0 0 6 0V4M8 4v17M17 21V4c-2 1-3 4-3 7s1 3 3 3"/></svg>
+          <p>Scrivi sopra per cercare un alimento, oppure sfoglia tutto il database.</p>
+          <button type="button" class="secondary" id="food-browse-all">Sfoglia tutti gli alimenti</button>
+        </div>
+        <div id="food-browse" hidden>
+          <ul class="food-list" id="food-list"></ul>
+          <p class="list-head" id="food-ciqual-head" hidden>Dalla tabella Ciqual (ANSES)</p>
+          <ul class="food-list" id="food-ciqual-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="tabs" aria-label="Sezioni">
+      <button data-tab="giorno" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15c3 0 3-6 6-6s3 9 6 9 3-6 6-6"/></svg>Giorno</button>
+      <button data-tab="calendario">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendario</button>
+      <button data-tab="pasti">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v7a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V3M8 3v18M16 3c-1.5 1-2.5 3-2.5 5s1 4 2.5 5v7"/></svg>Pasti</button>
+      <button data-tab="andamento">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Andamento</button>
+      <button data-tab="stato">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82 2 2 0 1 1-2.83 2.83 1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.1A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33 2 2 0 1 1-2.83-2.83A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.1A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82 2 2 0 1 1 2.83-2.83A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.1A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33 2 2 0 1 1 2.83 2.83A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z"/></svg>Impostazioni</button>
+    </nav>
+  </div>
+
+  <!-- Editor pasto -->
+  <div class="sheet" id="meal-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="meal-sheet-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="meal-sheet-title">Nuovo pasto</h2>
+        <button class="icon-btn" data-close aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="sheet-body">
+        <div id="meal-review" hidden></div>
+        <div class="chips" id="meal-type" role="radiogroup" aria-label="Tipo di pasto"></div>
+        <label class="field">Ora
+          <input type="datetime-local" id="meal-time" step="60">
+        </label>
+        <div class="photo-zone">
+          <div class="photo-row" id="meal-photos"></div>
+          <button type="button" class="secondary" id="meal-photo-add">Aggiungi foto del pasto</button>
+          <input type="file" id="meal-photo-input" accept="image/*" hidden>
+        </div>
+        <ul class="items" id="meal-items"></ul>
+        <div class="dish-zone"><button type="button" class="link-btn" id="meal-dish">Salva come ricetta</button></div>
+        <div class="adder">
+          <div class="adder-tabs" role="tablist" aria-label="Aggiungi alimento">
+            <button type="button" role="tab" aria-selected="true" data-adder-tab="frequenti">Frequenti</button>
+            <button type="button" role="tab" aria-selected="false" data-adder-tab="cerca">Cerca</button>
+            <button type="button" role="tab" aria-selected="false" data-adder-tab="barcode">Barcode</button>
+          </div>
+
+          <div class="adder-panel" data-adder-panel="frequenti">
+            <p class="list-head">Tocca per aggiungere a questo pasto</p>
+            <ul class="food-list compact" id="meal-frequent"></ul>
+          </div>
+
+          <div class="adder-panel" data-adder-panel="cerca" hidden>
+            <input type="search" class="search" id="meal-search" placeholder="Aggiungi un alimento" autocomplete="off">
+            <ul class="food-list compact" id="meal-results"></ul>
+            <p class="list-head" id="meal-ciqual-head" hidden>Dalla tabella Ciqual (ANSES)</p>
+            <ul class="food-list compact" id="meal-ciqual"></ul>
+            <div class="off-zone">
+              <button class="chip-btn" id="meal-off">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                Open Food Facts
+              </button>
+              <button class="chip-btn" id="meal-free">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                Voce libera
+              </button>
+            </div>
+            <ul class="food-list compact" id="meal-off-results"></ul>
+          </div>
+
+          <div class="adder-panel" data-adder-panel="barcode" hidden>
+            <button type="button" class="chip-btn" id="meal-barcode">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14M8 5v14M12 5v14M14 5v14M18 5v14M21 5v14"/></svg>
+              Apri lo scanner
+            </button>
+          </div>
+        </div>
+        <ul class="ai-notices" id="meal-ai-notices" hidden></ul>
+        <label class="field">Note
+          <input type="text" id="meal-notes" placeholder="Facoltative">
+        </label>
+        <p class="form-error" id="meal-error" role="alert"></p>
+      </div>
+      <footer class="sheet-foot">
+        <p class="total"><span id="meal-total">0</span> g<br>di carboidrati</p>
+        <div class="foot-actions">
+          <button class="primary danger" id="meal-delete" hidden>Elimina pasto</button>
+          <button class="primary" id="meal-save">Salva pasto</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Scheda alimento -->
+  <div class="sheet" id="food-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="food-sheet-title">
+    <div class="sheet-inner small">
+      <header class="sheet-head">
+        <h2 id="food-sheet-title">Nuovo alimento</h2>
+        <button class="icon-btn" data-close aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <form class="sheet-body" id="food-form">
+        <label class="field">Nome<input name="nome" required autocomplete="off"></label>
+        <label class="field">Marca<input name="marca" autocomplete="off" placeholder="Facoltativa"></label>
+        <div class="two">
+          <label class="field">Carboidrati per 100 g<input name="carbo_100g" inputmode="decimal" required></label>
+          <label class="field">Porzione abituale (g)<input name="porzione_g" inputmode="decimal" placeholder="Facoltativa"></label>
+        </div>
+        <label class="field">Codice a barre<input name="barcode" inputmode="numeric" autocomplete="off" placeholder="Facoltativo"></label>
+        <p class="hint" id="food-source"></p>
+        <p class="form-error" id="food-error" role="alert"></p>
+        <button type="button" class="link-btn" id="food-occ" hidden>Le altre volte che l'ho mangiato</button>
+        <button type="button" class="danger-link" id="food-delete" hidden>Elimina questo alimento</button>
+      </form>
+      <footer class="sheet-foot">
+        <button class="primary" id="food-save">Salva alimento</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Le altre volte -->
+  <div class="sheet" id="occ-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="occ-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="occ-title">Le altre volte</h2>
+        <button class="icon-btn" data-close aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="sheet-body">
+        <div class="chart-wrap" style="margin-top:0">
+          <div id="occ-chart" class="chart"></div>
+        </div>
+        <dl class="status-rows" id="occ-summary" style="margin-bottom:14px"></dl>
+        <ul class="occ-list" id="occ-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dettaglio giorno (dal Calendario) -->
+  <div class="sheet" id="daydetail-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="daydetail-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="daydetail-title">Giorno</h2>
+        <button class="icon-btn" data-close aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="sheet-body">
+        <dl class="figures" id="daydetail-figures"></dl>
+        <div class="log-head"><h2>Pasti</h2></div>
+        <ul class="log-extra" id="daydetail-meals"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scanner -->
+  <div class="sheet fullscreen" id="scan-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="scan-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="scan-title">Codice a barre</h2>
+        <button class="icon-btn" data-close aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div class="sheet-body">
+        <video id="scan-video" playsinline muted hidden></video>
+        <label class="field">Numero sotto il codice
+          <input id="scan-code" inputmode="numeric" autocomplete="off" placeholder="Es. 8076809513753">
+        </label>
+        <p class="hint" id="scan-hint"></p>
+        <p class="form-error" id="scan-error" role="alert"></p>
+      </div>
+      <footer class="sheet-foot">
+        <div class="foot-actions">
+          <button class="primary" id="scan-go">Cerca prodotto</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script type="module" src="static/app.js"></script>
+</body>
+</html>

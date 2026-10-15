@@ -1,0 +1,51 @@
+blueprint:
+  name: "Diario CamAPS: ipoglicemia notturna"
+  description: >-
+    Avvisa una seconda persona se la glicemia scende sotto una soglia durante
+    la notte. Solo un avviso descrittivo: non calcola né consiglia dosi.
+  domain: automation
+  input:
+    sensore_glicemia:
+      name: Sensore "Glicemia"
+      selector:
+        entity:
+          filter:
+            - integration: camaps_diary
+    soglia:
+      name: Soglia (mg/dL)
+      default: 54
+      selector:
+        number:
+          min: 40
+          max: 80
+          unit_of_measurement: mg/dL
+    inizio_notte:
+      name: Inizio notte
+      default: "23:00:00"
+      selector:
+        time: {}
+    fine_notte:
+      name: Fine notte
+      default: "07:00:00"
+      selector:
+        time: {}
+    notifica:
+      name: Azione di notifica
+      description: Tipicamente una notifica mobile verso la persona che fa da "secondo controllo".
+      selector:
+        action: {}
+
+mode: single
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input sensore_glicemia
+    below: !input soglia
+
+conditions:
+  - condition: time
+    after: !input inizio_notte
+    before: !input fine_notte
+
+actions:
+  - !input notifica

@@ -1,0 +1,11 @@
+{
+  "domain": "camaps_diary",
+  "name": "Diario CamAPS",
+  "config_flow": true,
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "version": "1.0.0",
+  "requirements": [],
+  "codeowners": [],
+  "documentation": "https://github.com/local/camaps_diary"
+}

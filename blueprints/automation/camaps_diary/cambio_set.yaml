@@ -1,0 +1,58 @@
+blueprint:
+  name: "Diario CamAPS: promemoria cambio set"
+  description: >-
+    Promemoria periodico per il cambio del set del microinfusore: avvisa e
+    registra da solo una nota nel diario quando sono passati i giorni scelti
+    dall'ultimo cambio. Prima di usarla crea un aiutante Data e ora
+    (input_datetime, solo data) e imposta manualmente quella data ogni volta
+    che cambi davvero il set.
+  domain: automation
+  input:
+    ultimo_cambio:
+      name: Aiutante "Ultimo cambio set"
+      description: Un input_datetime (solo data) che aggiorni tu a mano ad ogni cambio.
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+    giorni:
+      name: Ogni quanti giorni
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          unit_of_measurement: giorni
+    ora_controllo:
+      name: Ora del controllo giornaliero
+      default: "09:00:00"
+      selector:
+        time: {}
+    notifica:
+      name: Azione di notifica
+      selector:
+        action: {}
+
+mode: single
+
+triggers:
+  - trigger: time
+    at: !input ora_controllo
+
+variables:
+  ultimo_cambio: !input ultimo_cambio
+  giorni: !input giorni
+  giorni_passati: >-
+    {{ ((now().date() - (states(ultimo_cambio) | as_datetime).date()).days)
+       if states(ultimo_cambio) not in ['unknown', 'unavailable', 'none'] else 999 }}
+
+conditions:
+  - condition: template
+    value_template: "{{ giorni_passati >= giorni }}"
+
+actions:
+  - !input notifica
+  - action: camaps_diary.add_note
+    data:
+      text: "Promemoria: controllare/cambiare il set ({{ giorni_passati }} giorni dall'ultimo cambio registrato)"
+      kind: altro
