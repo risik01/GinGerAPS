@@ -218,8 +218,8 @@ function renderChart(p) {
     return;
   }
   const W = Math.max(300, Math.round(box.clientWidth || 360));
-  const H = 256;
-  const m = { l: 34, r: 12, t: 32, b: 54 };
+  const H = 300;
+  const m = { l: 34, r: 12, t: 32, b: 98 };
   const pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
   const low = p.soglie.bassa;
@@ -245,7 +245,7 @@ function renderChart(p) {
     const xx = f(x(h * 60));
     out.push(`<line class="grid" x1="${xx}" x2="${xx}" y1="${m.t}" y2="${m.t + ph}"/>`);
     if (h % 6 === 0 && h < 24) {
-      out.push(`<text class="axis" x="${xx}" y="${m.t + ph + 47}" text-anchor="${h === 0 ? 'start' : 'middle'}">${h}:00</text>`);
+      out.push(`<text class="axis" x="${xx}" y="${m.t + ph + 91}" text-anchor="${h === 0 ? 'start' : 'middle'}">${h}:00</text>`);
     }
   }
   for (const v of [low, high, 250].filter((val) => val < yMax)) {
@@ -279,18 +279,19 @@ function renderChart(p) {
     out.push(`<rect class="${cls}" x="${f(x(md.da))}" y="${sy}" width="${f(w)}" height="7" rx="1.5"/>`);
   }
 
-  // Insulina basale automatica del microinfusore: a scalini, sotto la striscia di modalita'.
+  // Insulina basale automatica del microinfusore: scala logaritmica da 0 al
+  // massimo vero della giornata, cosi' sia i valori bassi tipici (0,3-1 U/h)
+  // sia i picchi di correzione (anche 10 U/h) restano leggibili insieme,
+  // senza che gli uni schiaccino gli altri come con una scala lineare.
   const basale = p.basale || [];
   const byY0 = sy + 11;
-  const byH = 20;
+  const byH = 56;
   if (basale.length) {
-    // Scala fissa (non legata al massimo del giorno): cosi' 0,3-1 U/h, il
-    // range normale della basale, resta sempre leggibile alla stessa altezza
-    // ogni giorno. Un picco raro di correzione (es. 10 U/h) va fuori scala:
-    // resta visibile come barra piena fino in cima, col valore vero scritto.
-    const basalMax = Math.max(0.1, ...basale.map((b) => b[2]));
-    const BASAL_SCALE = Math.max(1.5, Math.min(basalMax, 2));
-    const by = (r) => byY0 + byH * (1 - Math.min(r, BASAL_SCALE) / BASAL_SCALE);
+    const BASAL_FLOOR = 0.1;
+    const basalMax = Math.max(0.5, ...basale.map((b) => b[2]));
+    const logFloor = Math.log(BASAL_FLOOR);
+    const logSpan = Math.log(basalMax) - logFloor;
+    const by = (r) => byY0 + byH * (1 - (Math.log(Math.max(r, BASAL_FLOOR)) - logFloor) / logSpan);
     let basalD = '';
     for (const [a, b, rate] of basale) {
       if (rate <= 0) continue;
@@ -301,8 +302,13 @@ function renderChart(p) {
     }
     out.push(`<line class="basal-base" x1="${m.l}" x2="${m.l + pw}" y1="${f(byY0 + byH)}" y2="${f(byY0 + byH)}"/>`);
     if (basalD) out.push(`<path class="basal-area" d="${basalD}"/>`);
-    const etichetta = basalMax > BASAL_SCALE ? `${BASAL_SCALE.toFixed(1)}+` : BASAL_SCALE.toFixed(1);
-    out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(byY0 + 5)}" text-anchor="end">${etichetta}</text>`);
+    out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(byY0 + byH + 3)}" text-anchor="end">0</text>`);
+    for (const ref of [0.3, 1, 3, 10]) {
+      if (ref > basalMax * 1.02) continue;
+      const yy = by(ref);
+      out.push(`<line class="basal-ref" x1="${m.l}" x2="${m.l + pw}" y1="${f(yy)}" y2="${f(yy)}"/>`);
+      out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(yy + 3)}" text-anchor="end">${ref}</text>`);
+    }
   }
 
   // Pasti del diario: barre ocra proporzionali ai carboidrati
