@@ -218,8 +218,16 @@ function renderChart(p) {
     return;
   }
   const W = Math.max(300, Math.round(box.clientWidth || 360));
-  const H = 300;
-  const m = { l: 34, r: 12, t: 32, b: 98 };
+  // L'altezza della banda della basale dipende dai dati del giorno: una riga
+  // per ogni unita' intera da 0 al massimo (0,1,2,3...), mai una riga sola
+  // che schiaccia tutto o una scala con solo 4 numeri scelti a caso.
+  const basaleGrezza = p.basale || [];
+  const basalTopInt = basaleGrezza.length
+    ? Math.max(1, Math.ceil(Math.max(...basaleGrezza.map((b) => b[2]))))
+    : 1;
+  const byH = basalTopInt * 8;
+  const H = 241 + byH;
+  const m = { l: 34, r: 12, t: 32, b: 39 + byH };
   const pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
   const low = p.soglie.bassa;
@@ -245,7 +253,7 @@ function renderChart(p) {
     const xx = f(x(h * 60));
     out.push(`<line class="grid" x1="${xx}" x2="${xx}" y1="${m.t}" y2="${m.t + ph}"/>`);
     if (h % 6 === 0 && h < 24) {
-      out.push(`<text class="axis" x="${xx}" y="${m.t + ph + 91}" text-anchor="${h === 0 ? 'start' : 'middle'}">${h}:00</text>`);
+      out.push(`<text class="axis" x="${xx}" y="${m.t + ph + 31 + byH}" text-anchor="${h === 0 ? 'start' : 'middle'}">${h}:00</text>`);
     }
   }
   for (const v of [low, high, 250].filter((val) => val < yMax)) {
@@ -279,19 +287,13 @@ function renderChart(p) {
     out.push(`<rect class="${cls}" x="${f(x(md.da))}" y="${sy}" width="${f(w)}" height="7" rx="1.5"/>`);
   }
 
-  // Insulina basale automatica del microinfusore: scala logaritmica da 0 al
-  // massimo vero della giornata, cosi' sia i valori bassi tipici (0,3-1 U/h)
-  // sia i picchi di correzione (anche 10 U/h) restano leggibili insieme,
-  // senza che gli uni schiaccino gli altri come con una scala lineare.
-  const basale = p.basale || [];
+  // Insulina basale automatica del microinfusore: scala lineare da 0 al
+  // massimo (intero per intero: 0,1,2,3...), cosi' si legge direttamente
+  // quanti U/h in ogni momento, picchi di correzione compresi.
+  const basale = basaleGrezza;
   const byY0 = sy + 11;
-  const byH = 56;
   if (basale.length) {
-    const BASAL_FLOOR = 0.1;
-    const basalMax = Math.max(0.5, ...basale.map((b) => b[2]));
-    const logFloor = Math.log(BASAL_FLOOR);
-    const logSpan = Math.log(basalMax) - logFloor;
-    const by = (r) => byY0 + byH * (1 - (Math.log(Math.max(r, BASAL_FLOOR)) - logFloor) / logSpan);
+    const by = (r) => byY0 + byH * (1 - Math.min(r, basalTopInt) / basalTopInt);
     let basalD = '';
     for (const [a, b, rate] of basale) {
       if (rate <= 0) continue;
@@ -302,9 +304,7 @@ function renderChart(p) {
     }
     out.push(`<line class="basal-base" x1="${m.l}" x2="${m.l + pw}" y1="${f(byY0 + byH)}" y2="${f(byY0 + byH)}"/>`);
     if (basalD) out.push(`<path class="basal-area" d="${basalD}"/>`);
-    out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(byY0 + byH + 3)}" text-anchor="end">0</text>`);
-    for (const ref of [0.3, 1, 3, 10]) {
-      if (ref > basalMax * 1.02) continue;
+    for (let ref = 0; ref <= basalTopInt; ref += 1) {
       const yy = by(ref);
       out.push(`<line class="basal-ref" x1="${m.l}" x2="${m.l + pw}" y1="${f(yy)}" y2="${f(yy)}"/>`);
       out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(yy + 3)}" text-anchor="end">${ref}</text>`);
