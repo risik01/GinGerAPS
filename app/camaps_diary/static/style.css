@@ -260,6 +260,7 @@ svg { display: block; }
 .chart .mode-off { fill: var(--carb); }
 .chart .basal-area { fill: var(--ins); opacity: 0.5; }
 .chart .basal-base { stroke: var(--line); stroke-width: 1; }
+.chart .basal-ref { stroke: var(--line); stroke-width: 0.75; stroke-dasharray: 2 2; }
 .chart .basal-axis { font-size: 10px; }
 .chart .cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .cursor-dot { fill: var(--ink); }

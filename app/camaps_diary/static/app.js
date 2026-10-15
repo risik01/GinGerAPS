@@ -285,7 +285,10 @@ function renderChart(p) {
   const byH = 16;
   if (basale.length) {
     const basalMax = Math.max(0.1, ...basale.map((b) => b[2]));
-    const by = (r) => byY0 + byH * (1 - Math.min(r, basalMax) / basalMax);
+    // scala a radice quadrata, non lineare: un picco di correzione (es. 10 U/h)
+    // non deve schiacciare vicino allo zero il resto della giornata, che di
+    // solito sta su valori molto più bassi (0,3-1,5 U/h).
+    const by = (r) => byY0 + byH * (1 - Math.sqrt(Math.min(r, basalMax)) / Math.sqrt(basalMax));
     let basalD = '';
     for (const [a, b, rate] of basale) {
       if (rate <= 0) continue;
@@ -297,6 +300,12 @@ function renderChart(p) {
     out.push(`<line class="basal-base" x1="${m.l}" x2="${m.l + pw}" y1="${f(byY0 + byH)}" y2="${f(byY0 + byH)}"/>`);
     if (basalD) out.push(`<path class="basal-area" d="${basalD}"/>`);
     out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(byY0 + 5)}" text-anchor="end">${basalMax.toFixed(1)}</text>`);
+    if (basalMax > 1.3) {
+      // riferimento a 1 U/h: la scala e' a radice quadrata, non lineare,
+      // quindi un numero intermedio aiuta a leggere le proporzioni giuste.
+      out.push(`<line class="basal-ref" x1="${m.l}" x2="${m.l + pw}" y1="${f(by(1))}" y2="${f(by(1))}"/>`);
+      out.push(`<text class="axis basal-axis" x="${m.l - 6}" y="${f(by(1) + 3)}" text-anchor="end">1</text>`);
+    }
   }
 
   // Pasti del diario: barre ocra proporzionali ai carboidrati
