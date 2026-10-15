@@ -612,7 +612,9 @@ function renderMealReview(meal) {
   if (!meal || !meal.analisi) { box.hidden = true; box.innerHTML = ''; return; }
   const a = meal.analisi;
   const righe = [];
-  if (!a.in_attesa) {
+  if (a.in_attesa) {
+    righe.push(['CamAPS', "dati di quest'ora non ancora arrivati su Glooko"]);
+  } else {
     if (a.differenza_carbo_g != null && Math.abs(a.differenza_carbo_g) >= 1) {
       const diff = a.differenza_carbo_g;
       righe.push(['Dichiarati vs CamAPS',
@@ -626,9 +628,11 @@ function renderMealReview(meal) {
   const mm = minutesOf(meal.ora.length > 16 ? meal.ora : `${meal.ora}:00`);
   const glic = ((state.payload && state.payload.glicemie) || []).filter((p) => p[0] >= mm - 30 && p[0] <= mm + 180);
   box.hidden = false;
+  const vuoto = !glic.length && !righe.length;
   box.innerHTML = `
     ${glic.length ? '<div class="mini-chart-wrap"><div id="meal-review-chart"></div></div>' : ''}
-    ${righe.length ? `<dl class="status-rows meal-review-facts">${righe.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>` : ''}`;
+    ${righe.length ? `<dl class="status-rows meal-review-facts">${righe.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>` : ''}
+    ${vuoto ? '<p class="hint">Dati CamAPS non disponibili per questo orario.</p>' : ''}`;
   if (glic.length) renderMiniChart('#meal-review-chart', mm, glic);
 }
 

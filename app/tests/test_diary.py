@@ -17,6 +17,86 @@ def test_create_food_round_trip_con_porzioni(store):
     assert ricaricato["porzioni"] == food["porzioni"]
 
 
+class TestSearchFoods:
+    """Ricerca testuale via FTS5 (vedi store.py): prefisso per ogni parola,
+    non più una scansione LIKE su tutta la tabella."""
+
+    def test_trova_per_prefisso(self, store):
+        diary.create_food(store, {"nome": "Pasta integrale", "carbo_100g": 70})
+        diary.create_food(store, {"nome": "Patate al forno", "carbo_100g": 17})
+        risultati = diary.search_foods(store, "past")
+        nomi = [f["nome"] for f in risultati]
+        assert "Pasta integrale" in nomi
+        assert "Patate al forno" not in nomi  # "pat" non e' un prefisso di "patate" cercando "past"
+
+    def test_due_parole_richiedono_entrambi_i_prefissi(self, store):
+        diary.create_food(store, {"nome": "Pasta al pomodoro", "carbo_100g": 25})
+        diary.create_food(store, {"nome": "Pasta al pesto", "carbo_100g": 30})
+        risultati = diary.search_foods(store, "pasta pom")
+        nomi = [f["nome"] for f in risultati]
+        assert nomi == ["Pasta al pomodoro"]
+
+    def test_non_sensibile_ad_accenti_e_maiuscole(self, store):
+        diary.create_food(store, {"nome": "Caffè macchiato", "carbo_100g": 1})
+        assert len(diary.search_foods(store, "caffe")) == 1
+        assert len(diary.search_foods(store, "CAFFÈ")) == 1
+
+    def test_cerca_anche_nella_marca(self, store):
+        diary.create_food(store, {"nome": "Biscotti frollini", "marca": "Mulino Bianco", "carbo_100g": 60})
+        assert len(diary.search_foods(store, "mulino")) == 1
+
+    def test_modifica_alimento_aggiorna_la_ricerca(self, store):
+        food = diary.create_food(store, {"nome": "Yogurt bianco", "carbo_100g": 5})
+        assert len(diary.search_foods(store, "bianco")) == 1
+        diary.update_food(store, food["id"], {"nome": "Yogurt alla vaniglia", "carbo_100g": 12})
+        assert diary.search_foods(store, "bianco") == []
+        assert len(diary.search_foods(store, "vaniglia")) == 1
+
+    def test_eliminare_alimento_lo_rimuove_dalla_ricerca(self, store):
+        food = diary.create_food(store, {"nome": "Mortadella IGP", "carbo_100g": 1})
+        assert len(diary.search_foods(store, "mortadella")) == 1
+        diary.delete_food(store, food["id"])
+        assert diary.search_foods(store, "mortadella") == []
+
+    def test_nessun_risultato_restituisce_lista_vuota(self, store):
+        diary.create_food(store, {"nome": "Pane", "carbo_100g": 50})
+        assert diary.search_foods(store, "zzznonesistente") == []
+
+    def test_backfill_indicizza_le_righe_inserite_prima_che_lo_store_esistesse(self, tmp_path):
+        """Simula un database con righe food gia' presenti (es. da un vecchio
+        import in blocco) prima che la tabella FTS venga creata/popolata per
+        la prima volta: deve restare possibile cercarle dopo un riavvio."""
+        import sqlite3
+        from camaps_diary.store import Store
+
+        db_path = tmp_path / "vecchio.db"
+        # crea solo la tabella food "a mano", come se venisse da un bulk import
+        # fatto prima che esistesse food_fts (o con un INSERT diretto, non via API)
+        con = sqlite3.connect(db_path)
+        con.execute("CREATE TABLE food (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+                   "carbs_per_100g REAL NOT NULL, source TEXT, barcode TEXT UNIQUE, "
+                   "created_at TEXT DEFAULT CURRENT_TIMESTAMP, brand TEXT)")
+        con.execute("INSERT INTO food(id, name, carbs_per_100g) VALUES (1, 'Pasta integrale', 70)")
+        con.commit()
+        con.close()
+
+        store = Store(db_path)  # prima apertura: deve far partire il backfill
+        try:
+            risultati = diary.search_foods(store, "pasta")
+            assert len(risultati) == 1
+            assert risultati[0]["nome"] == "Pasta integrale"
+        finally:
+            store.close()
+
+    def test_query_vuota_ordina_per_uso(self, store):
+        pane = diary.create_food(store, {"nome": "Pane", "carbo_100g": 50})
+        diary.create_food(store, {"nome": "Pasta", "carbo_100g": 75})
+        diary.save_meal(store, {"ora": "2026-10-15T08:00", "tipo": "colazione",
+                                "voci": [{"alimento_id": pane["id"], "grammi": 50}]})
+        risultati = diary.search_foods(store, "")
+        assert risultati[0]["nome"] == "Pane"  # il piu' usato viene prima
+
+
 def test_meal_senza_voci_e_permesso(store):
     """Un pasto puo' nascere con solo una foto: zero alimenti non deve fallire."""
     pasto = diary.save_meal(store, {"ora": "2026-10-15T08:00", "tipo": "colazione", "voci": []})

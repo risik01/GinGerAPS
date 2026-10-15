@@ -102,16 +102,23 @@ FROM food f
 """
 
 
+def _fts_match_query(q: str) -> str | None:
+    """Ogni parola diventa un prefisso ("past pom" -> "past"* AND "pom"*):
+    trova alimenti mentre si scrive, senza dover finire la parola."""
+    terms = [t.replace('"', '""') for t in q.split() if t]
+    if not terms:
+        return None
+    return " AND ".join(f'"{t}"*' for t in terms)
+
+
 def search_foods(store: Store, q: str = "", limit: int = 40) -> list[dict]:
     q = (q or "").strip()
     if q:
-        terms = [t for t in q.split() if t]
-        where = " AND ".join("(f.name LIKE ? OR IFNULL(f.brand, '') LIKE ?)" for _ in terms)
-        params = []
-        for t in terms:
-            params += [f"%{t}%", f"%{t}%"]
+        match = _fts_match_query(q)
         rows = store.db.execute(
-            FOOD_SELECT + f" WHERE {where} ORDER BY uses DESC, f.name LIMIT ?", (*params, limit))
+            "SELECT f.*, (SELECT COUNT(*) FROM meal_item mi WHERE mi.food_id = f.id) AS uses "
+            "FROM food_fts JOIN food f ON f.id = food_fts.rowid "
+            "WHERE food_fts MATCH ? ORDER BY uses DESC, f.name LIMIT ?", (match, limit))
     else:
         rows = store.db.execute(FOOD_SELECT + " ORDER BY uses DESC, f.name LIMIT ?", (limit,))
     return [_food_dict(r) for r in rows]

@@ -61,6 +61,23 @@ CREATE TABLE IF NOT EXISTS food (
     created_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS food_name ON food(name);
+-- Ricerca testuale veloce anche con centinaia di migliaia di righe (Open Food
+-- Facts): FTS5 a contenuto esterno, sincronizzato con i trigger sotto invece
+-- di duplicare il testo. Senza, una LIKE '%termine%' deve scansionare tutta
+-- la tabella food a ogni ricerca.
+CREATE VIRTUAL TABLE IF NOT EXISTS food_fts USING fts5(
+    name, brand, content='food', content_rowid='id', tokenize="unicode61 remove_diacritics 2"
+);
+CREATE TRIGGER IF NOT EXISTS food_fts_ai AFTER INSERT ON food BEGIN
+  INSERT INTO food_fts(rowid, name, brand) VALUES (new.id, new.name, new.brand);
+END;
+CREATE TRIGGER IF NOT EXISTS food_fts_ad AFTER DELETE ON food BEGIN
+  INSERT INTO food_fts(food_fts, rowid, name, brand) VALUES ('delete', old.id, old.name, old.brand);
+END;
+CREATE TRIGGER IF NOT EXISTS food_fts_au AFTER UPDATE ON food BEGIN
+  INSERT INTO food_fts(food_fts, rowid, name, brand) VALUES ('delete', old.id, old.name, old.brand);
+  INSERT INTO food_fts(rowid, name, brand) VALUES (new.id, new.name, new.brand);
+END;
 CREATE TABLE IF NOT EXISTS meal (
     id         INTEGER PRIMARY KEY,
     ts_local   TEXT NOT NULL,
@@ -150,6 +167,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)
         self._migrate()
+        self._backfill_food_fts()
         from .ciqual import ensure_schema
         ensure_schema(self)
 
@@ -158,6 +176,22 @@ class Store:
             cols = {r["name"] for r in self.db.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
                 self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        self.db.commit()
+
+    def _backfill_food_fts(self):
+        """La tabella FTS e' a contenuto esterno: se non e' mai stata popolata
+        ma food ha gia' righe (es. dopo un aggiornamento da una versione senza
+        FTS, o dopo un import fatto prima che esistesse), va riempita una
+        volta sola. ATTENZIONE: per una tabella a contenuto esterno,
+        "SELECT COUNT(*) FROM food_fts" rispecchia il conteggio della tabella
+        food anche quando l'indice vero e proprio e' ancora vuoto (lo si vede
+        da food_fts_docsize, non da food_fts stessa): un controllo basato su
+        quel COUNT(*) salterebbe sempre il backfill. Si usa quindi un flag
+        dedicato nel kv, non l'introspezione delle tabelle ombra di FTS5."""
+        if self.get("food_fts_backfill_fatto"):
+            return
+        self.db.execute("INSERT INTO food_fts(food_fts) VALUES ('rebuild')")
+        self.set("food_fts_backfill_fatto", "1")
         self.db.commit()
 
     def close(self):
