@@ -129,14 +129,19 @@ def test_notable_days_segnala_giorno_senza_dati(store):
                          "dettaglio": "Nessun dato dal sensore", "note": []}]
 
 
-# -- tabella pasti -------------------------------------------------------------
+# -- tabella pasti e dettaglio giornaliero --------------------------------------
 
-def test_meal_rows_elenca_i_pasti_con_alimenti_e_carboidrati(store):
+def _pasti_del_periodo(store, day_from, day_to):
+    blocchi = report.day_blocks(store, day_from, day_to, [])
+    return [p for b in blocchi for p in b["pasti"]]
+
+
+def test_day_blocks_elenca_i_pasti_con_alimenti_e_carboidrati(store):
     pasta = diary.create_food(store, {"nome": "Pasta", "carbo_100g": 75})
     _fill_day_cgm(store, "2026-03-01", mgdl=130)
     diary.save_meal(store, {"ora": "2026-03-01T13:00", "tipo": "pranzo",
                             "voci": [{"alimento_id": pasta["id"], "grammi": 100}]})
-    righe = report.meal_rows(store, date(2026, 3, 1), date(2026, 3, 1))
+    righe = _pasti_del_periodo(store, date(2026, 3, 1), date(2026, 3, 1))
     assert len(righe) == 1
     r = righe[0]
     assert r["giorno"] == "2026-03-01"
@@ -144,10 +149,39 @@ def test_meal_rows_elenca_i_pasti_con_alimenti_e_carboidrati(store):
     assert r["tipo"] == "Pranzo"
     assert "Pasta" in r["alimenti"]
     assert r["carbo_dichiarati_g"] == 75.0
+    assert r["in_attesa"] is False
 
 
-def test_meal_rows_periodo_senza_pasti_e_vuoto(store):
-    assert report.meal_rows(store, date(2026, 3, 10), date(2026, 3, 12)) == []
+def test_day_blocks_periodo_senza_pasti_e_vuoto(store):
+    assert _pasti_del_periodo(store, date(2026, 3, 10), date(2026, 3, 12)) == []
+
+
+def test_pasto_senza_dati_camaps_ancora_arrivati_non_viene_saltato(store):
+    """Bug segnalato dall'utente: la merenda inserita nel pomeriggio non
+    compariva nel report perche' i dati CamAPS di quell'ora non erano ancora
+    arrivati da Glooko e il pasto veniva scartato del tutto, invece di essere
+    mostrato con 'in attesa' per le sole colonne che dipendono da CamAPS."""
+    pane = diary.create_food(store, {"nome": "Pane e marmellata", "carbo_100g": 50})
+    # nessuna lettura di glicemia nel database: last_glucose_local() e' None,
+    # quindi analyse_meal segna sempre in_attesa=True per qualunque pasto
+    diary.save_meal(store, {"ora": "2026-03-01T17:00", "tipo": "merenda",
+                            "voci": [{"alimento_id": pane["id"], "grammi": 40}]})
+    righe = _pasti_del_periodo(store, date(2026, 3, 1), date(2026, 3, 1))
+    assert len(righe) == 1
+    r = righe[0]
+    assert r["tipo"] == "Merenda"
+    assert r["in_attesa"] is True
+    assert r["carbo_dichiarati_g"] == 20.0  # i grammi dichiarati si vedono comunque
+    assert r["carbo_camaps_g"] is None
+    assert r["bolo_U"] is None
+
+
+def test_day_blocks_include_giorni_senza_pasti_nel_dettaglio(store):
+    _fill_day_cgm(store, "2026-03-01", mgdl=120)
+    blocchi = report.day_blocks(store, date(2026, 3, 1), date(2026, 3, 2), [])
+    assert len(blocchi) == 2
+    assert blocchi[0]["pasti"] == []
+    assert len(blocchi[0]["glicemie"]) > 0
 
 
 # -- rendering HTML e PDF -------------------------------------------------------
@@ -167,7 +201,11 @@ def _dati_minimi():
         "notevoli": [{"giorno": "2026-03-05", "tipo": "ipo", "dettaglio": "test", "note": []}],
         "pasti": [{"giorno": "2026-03-01", "ora": "13:00", "tipo": "Pranzo", "alimenti": "Pasta",
                    "carbo_dichiarati_g": 75.0, "carbo_camaps_g": 70.0, "bolo_U": 5.0,
-                   "picco_2h": 140, "foto_id": None}],
+                   "picco_2h": 140, "in_attesa": False, "foto_id": None}],
+        "giorni_dettaglio": [{"giorno": "2026-03-01", "riepilogo": {"tir_pct": 80, "media_mgdl": 140, "passi": 6000},
+                              "glicemie": [[480, 110], [600, 160]],
+                              "voci": [{"min": 600, "tipo": "bolo"}], "soglie": {"bassa": 70, "alta": 180},
+                              "pasti": [{"ora": "13:00", "tipo": "Pranzo", "carbo_dichiarati_g": 75.0, "bolo_U": 5.0}]}],
         "domande_visita": "",
         "consensus": report.CONSENSUS,
     }

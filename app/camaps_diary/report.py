@@ -130,31 +130,50 @@ def notable_days(store: Store, giorni: list[dict]) -> list[dict]:
     return out
 
 
-# -- tabella pasti --------------------------------------------------------------
+# -- pasti e dettaglio giornaliero ----------------------------------------------
 
-def meal_rows(store: Store, day_from: date, day_to: date) -> list[dict]:
-    rows = []
+def _meal_row(payload_giorno: str, m: dict) -> dict:
+    """Una riga pasto per la tabella del periodo: sempre presente, anche se
+    i dati CamAPS di quell'ora non sono ancora arrivati da Glooko (prima si
+    saltava il pasto del tutto in quel caso, facendolo sembrare sparito)."""
+    a = m.get("analisi") or {}
+    alimenti = ", ".join(v["descrizione"] for v in m["voci"]) if m["voci"] else "—"
+    in_attesa = bool(a.get("in_attesa"))
+    camaps_g = None if in_attesa else (a.get("carbo_ipo_camaps_g") if a.get("ipo") else a.get("carbo_dichiarati_g"))
+    return {
+        "giorno": payload_giorno, "ora": m["ora"][11:16],
+        "tipo": MEAL_LABELS.get(m["tipo"], m["tipo"]),
+        "alimenti": alimenti,
+        "carbo_dichiarati_g": m["carbo_g"],
+        "carbo_camaps_g": camaps_g,
+        "bolo_U": None if in_attesa else a.get("bolo_U"),
+        "picco_2h": None if in_attesa else a.get("glicemia_2h"),
+        "in_attesa": in_attesa,
+        "foto_id": m["foto"][0]["id"] if m.get("foto") else None,
+    }
+
+
+def day_blocks(store: Store, day_from: date, day_to: date, giorni_summary: list[dict]) -> list[dict]:
+    """Un blocco completo per ogni giorno del periodo (grafico della glicemia
+    coi pasti segnati, e i pasti di quel giorno con tutte le informazioni):
+    un solo giro su day_payload, riusato sia per la tabella pasti del periodo
+    sia per il dettaglio giorno per giorno."""
+    riepilogo_per_giorno = {g["giorno"]: g for g in giorni_summary}
+    blocchi = []
     d = day_from
     while d <= day_to:
         payload = day_payload(store, d)
-        for m in payload["pasti"]:
-            a = m.get("analisi") or {}
-            if a.get("in_attesa"):
-                continue
-            alimenti = ", ".join(v["descrizione"] for v in m["voci"]) if m["voci"] else "—"
-            camaps_g = a.get("carbo_ipo_camaps_g") if a.get("ipo") else a.get("carbo_dichiarati_g")
-            rows.append({
-                "giorno": payload["giorno"], "ora": m["ora"][11:16],
-                "tipo": MEAL_LABELS.get(m["tipo"], m["tipo"]),
-                "alimenti": alimenti,
-                "carbo_dichiarati_g": m["carbo_g"],
-                "carbo_camaps_g": camaps_g,
-                "bolo_U": a.get("bolo_U"),
-                "picco_2h": a.get("glicemia_2h"),
-                "foto_id": m["foto"][0]["id"] if m.get("foto") else None,
-            })
+        pasti = [_meal_row(payload["giorno"], m) for m in payload["pasti"]]
+        blocchi.append({
+            "giorno": payload["giorno"],
+            "riepilogo": riepilogo_per_giorno.get(payload["giorno"], {}),
+            "glicemie": payload["glicemie"],
+            "voci": payload["voci"],
+            "soglie": payload["soglie"],
+            "pasti": pasti,
+        })
         d += timedelta(days=1)
-    return rows
+    return blocchi
 
 
 # -- raccolta dati completa ------------------------------------------------------
@@ -163,6 +182,7 @@ def build_report_data(store: Store, day_from: date, day_to: date, kind: str,
                        domande_visita: str = "") -> dict:
     from .analysis import period_summary
     giorni = period_summary(store, day_from, day_to)
+    blocchi = day_blocks(store, day_from, day_to, giorni)
     return {
         "generato": now_local(),
         "day_from": day_from, "day_to": day_to, "kind": kind,
@@ -170,7 +190,8 @@ def build_report_data(store: Store, day_from: date, day_to: date, kind: str,
         "metriche": period_metrics(giorni),
         "agp": agp_profile(store, day_from, day_to),
         "notevoli": notable_days(store, giorni),
-        "pasti": meal_rows(store, day_from, day_to),
+        "giorni_dettaglio": blocchi,
+        "pasti": [p for b in blocchi for p in b["pasti"]],
         "domande_visita": (domande_visita or "").strip(),
         "consensus": CONSENSUS,
     }
@@ -217,6 +238,45 @@ def _agp_svg(bins: list[dict], low: float, high: float) -> str:
     return "".join(parts)
 
 
+def _day_svg(glicemie: list, voci: list, low: float, high: float) -> str:
+    """Grafico compatto di un solo giorno: linea della glicemia, banda del
+    range, boli (triangoli) e carboidrati senza bolo (punti) — la stessa
+    lettura rapida del grafico "Giorno" dell'app, in formato da stampa."""
+    W, H = 600, 110
+    m = {"l": 30, "r": 8, "t": 14, "b": 16}
+    pw, ph = W - m["l"] - m["r"], H - m["t"] - m["b"]
+    y_min, y_max = 40, 300
+
+    def x(mm):
+        return m["l"] + mm / 1440 * pw
+
+    def y(v):
+        v = min(max(v, y_min), y_max)
+        return m["t"] + (1 - (v - y_min) / (y_max - y_min)) * ph
+
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">']
+    parts.append(f'<rect x="{m["l"]}" y="{y(high):.1f}" width="{pw:.1f}" '
+                  f'height="{(y(low) - y(high)):.1f}" fill="#d9f0ec"/>')
+    for h in range(0, 25, 6):
+        xx = x(h * 60)
+        parts.append(f'<line x1="{xx:.1f}" x2="{xx:.1f}" y1="{m["t"]}" y2="{m["t"] + ph}" stroke="#e4e4e0"/>')
+        parts.append(f'<text x="{xx:.1f}" y="{m["t"] + ph + 12}" font-size="8" '
+                     f'text-anchor="middle" fill="#6b6b63">{h}</text>')
+    if glicemie:
+        d = "M" + " L".join(f"{x(mm):.1f},{y(v):.1f}" for mm, v in glicemie)
+        parts.append(f'<path d="{d}" fill="none" stroke="#17242d" stroke-width="1.3"/>')
+    for v in voci:
+        xx = x(v["min"])
+        if v["tipo"] == "bolo":
+            parts.append(f'<path d="M{xx-4:.1f},{m["t"]-7} L{xx+4:.1f},{m["t"]-7} L{xx:.1f},{m["t"]-1} Z" fill="#0e9f8e"/>')
+        elif v["tipo"] == "ipo":
+            parts.append(f'<circle cx="{xx:.1f}" cy="{m["t"]-4}" r="2.5" fill="#c5433f"/>')
+        else:
+            parts.append(f'<circle cx="{xx:.1f}" cy="{m["t"]-4}" r="2" fill="#9a5f07"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _week_grid_html(giorni: list[dict]) -> str:
     """Griglia settimanale di mini-giorni colorati per TIR (verde/ambra/rosso),
     grigio se sotto la soglia minima di copertura CGM."""
@@ -239,6 +299,37 @@ def _week_grid_html(giorni: list[dict]) -> str:
         giorno_num = date.fromisoformat(g["giorno"]).day
         cells.append(f"<span class='rwcell {cls}'>{giorno_num}</span>")
     return "<div class='rwgrid'>" + "".join(cells) + "</div>"
+
+
+def _day_detail_html(block: dict, low: float, high: float) -> str:
+    esc = html.escape
+    r = block["riepilogo"]
+    tir = r.get("tir_pct")
+    media = r.get("media_mgdl")
+    passi = r.get("passi")
+    intestazione = (
+        f"<span class='dd-tir {'nodata' if tir is None else ('good' if tir >= 70 else ('mid' if tir >= 40 else 'low'))}'>"
+        f"{f'{tir:.0f}% nel range' if tir is not None else 'Senza dati'}</span>"
+        + (f"<span>{media:.0f} mg/dL medi</span>" if media is not None else "")
+        + (f"<span>{passi:.0f} passi</span>" if passi is not None else "")
+    )
+    if block["pasti"]:
+        pasti_riga = " · ".join(
+            f"{esc(p['ora'])} {esc(p['tipo'])}"
+            + (f" ({p['carbo_dichiarati_g']:.0f} g"
+               + (f", bolo {p['bolo_U']:.1f} U" if p.get('bolo_U') else "")
+               + ")")
+            for p in block["pasti"])
+    else:
+        pasti_riga = "<span class='muted'>Nessun pasto registrato.</span>"
+    return f"""
+    <div class="day-card">
+      <div class="day-card-head">
+        <b>{_fmt_g(block['giorno'])}</b> {intestazione}
+      </div>
+      {_day_svg(block['glicemie'], block['voci'], low, high)}
+      <p class="day-card-meals">{pasti_riga}</p>
+    </div>"""
 
 
 def _font_face_css() -> str:
@@ -283,18 +374,26 @@ def render_html(data: dict, soglie: dict) -> str:
 
     esc = html.escape
 
+    NOTEVOLE_ICONA = {"ipo": "▼", "iper": "▲", "senza_dati": "○"}
+    NOTEVOLE_ETICHETTA = {"ipo": "Ipoglicemia", "iper": "Iperglicemia sostenuta", "senza_dati": "Senza dati"}
     notevoli_html = "".join(
-        f"<li><b>{_fmt_g(n['giorno'])}</b> — {esc(n['dettaglio'])}"
-        f"{' · ' + esc('; '.join(n['note'])) if n['note'] else ''}</li>"
+        f"<div class='notevole-card notevole-{n['tipo']}'>"
+        f"<span class='notevole-icona'>{NOTEVOLE_ICONA.get(n['tipo'], '•')}</span>"
+        f"<div><b>{_fmt_g(n['giorno'])}</b> — {esc(NOTEVOLE_ETICHETTA.get(n['tipo'], n['tipo']))}"
+        f"<p>{esc(n['dettaglio'])}{' · ' + esc('; '.join(n['note'])) if n['note'] else ''}</p></div></div>"
         for n in data["notevoli"]
-    ) or "<li class='muted'>Nessun giorno notevole nel periodo.</li>"
+    ) or "<p class='muted'>Nessun giorno notevole nel periodo.</p>"
 
     pasti_html = "".join(
-        f"<tr><td>{_fmt_g(p['giorno'])}</td><td>{esc(p['ora'])}</td><td>{esc(p['tipo'])}</td>"
+        f"<tr class=\"{'in-attesa' if p['in_attesa'] else ''}\">"
+        f"<td>{_fmt_g(p['giorno'])}</td><td>{esc(p['ora'])}</td><td>{esc(p['tipo'])}</td>"
         f"<td>{esc(p['alimenti'])}</td><td>{num(p['carbo_dichiarati_g'])}</td>"
-        f"<td>{num(p['carbo_camaps_g'])}</td><td>{num(p['bolo_U'])}</td><td>{num(p['picco_2h'])}</td></tr>"
+        f"<td>{num(p['carbo_camaps_g']) if not p['in_attesa'] else 'in attesa'}</td>"
+        f"<td>{num(p['bolo_U'])}</td><td>{num(p['picco_2h'])}</td></tr>"
         for p in data["pasti"]
     ) or "<tr><td colspan='8' class='muted'>Nessun pasto registrato nel periodo.</td></tr>"
+
+    giorni_dettaglio_html = "".join(_day_detail_html(b, low, high) for b in data["giorni_dettaglio"])
 
     domande = (f"<div class='visit-questions'><h3>Domande per la visita</h3>"
                f"<p>{esc(data['domande_visita'])}</p></div>") if data["domande_visita"] else ""
@@ -329,10 +428,25 @@ h1 {{ font-size: 20px; }} h2 {{ font-size: 15px; margin-top: 18px; }} h3 {{ font
 table {{ width: 100%; border-collapse: collapse; font-size: 9.5px; }}
 th, td {{ text-align: left; border-bottom: 1px solid #e4e4e0; padding: 3px 4px; }}
 th {{ color: #6b6b63; font-weight: 700; }}
-ul.notevoli {{ margin: 4px 0; padding-left: 16px; }}
+tr.in-attesa td {{ color: #6b6b63; font-style: italic; }}
 .muted {{ color: #6b6b63; }}
 .visit-questions {{ margin-top: 14px; border-top: 1px solid #e4e4e0; padding-top: 8px; }}
 .disclaimer {{ margin-top: 2px; }}
+.day-card {{ border: 1px solid #e4e4e0; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px;
+  page-break-inside: avoid; }}
+.day-card-head {{ display: flex; align-items: baseline; gap: 10px; font-size: 10px; margin-bottom: 2px; }}
+.day-card-head b {{ font-family: "SpaceGrotesk", sans-serif; }}
+.dd-tir {{ font-weight: 700; padding: 1px 6px; border-radius: 999px; font-size: 9px; color: #fff; }}
+.dd-tir.good {{ background: #0e9f8e; }} .dd-tir.mid {{ background: #c98a1f; }}
+.dd-tir.low {{ background: #c5433f; }} .dd-tir.nodata {{ background: #cfcfc7; color: #6b6b63; }}
+.day-card-meals {{ font-size: 9px; color: #42423c; margin: 2px 0 0; }}
+.notevole-card {{ display: flex; gap: 8px; align-items: flex-start; border-radius: 6px;
+  padding: 6px 8px; margin-bottom: 6px; border-left: 4px solid #cfcfc7; background: #f7f7f3; }}
+.notevole-card p {{ margin: 2px 0 0; color: #42423c; }}
+.notevole-icona {{ font-size: 13px; line-height: 1.3; }}
+.notevole-ipo {{ border-left-color: #c5433f; }} .notevole-ipo .notevole-icona {{ color: #c5433f; }}
+.notevole-iper {{ border-left-color: #c98a1f; }} .notevole-iper .notevole-icona {{ color: #c98a1f; }}
+.notevole-senza_dati {{ border-left-color: #9a9a90; }} .notevole-senza_dati .notevole-icona {{ color: #9a9a90; }}
 </style></head>
 <body>
 <div class="footer disclaimer">{DISCLAIMER}</div>
@@ -366,6 +480,13 @@ ul.notevoli {{ margin: 4px 0; padding-left: 16px; }}
 {_week_grid_html(data['giorni'])}
 
 <div style="page-break-before: always;"></div>
+<h2>Dettaglio giorno per giorno</h2>
+<p class="muted">Per ogni giorno: tempo nel range, glicemia media, passi, il grafico della
+  giornata con boli (▲) e carboidrati senza bolo (●), e i pasti registrati con i grammi
+  dichiarati e il bolo collegato.</p>
+{giorni_dettaglio_html}
+
+<div style="page-break-before: always;"></div>
 <h2>Pasti del periodo</h2>
 <table>
 <thead><tr><th>Giorno</th><th>Ora</th><th>Tipo</th><th>Alimenti</th>
@@ -374,7 +495,7 @@ ul.notevoli {{ margin: 4px 0; padding-left: 16px; }}
 </table>
 
 <h2>Giorni notevoli</h2>
-<ul class="notevoli">{notevoli_html}</ul>
+{notevoli_html}
 
 {domande}
 </body></html>"""
