@@ -52,7 +52,10 @@ const CIQUAL_LABEL = (c) => {
 const state = {
   today: null, day: null, stato: null, payload: null, trendDays: 7, trendRows: null, agpBins: null,
   calYear: null, calMonth: null, showAllFoods: false, reportDays: '14', visitLastDate: null,
+  wizardStep: 1,
 };
+
+const WIZARD_STEPS = 4;
 
 // ---------------------------------------------------------------- utilita'
 
@@ -1864,6 +1867,89 @@ async function saveSourceSettings() {
   }
 }
 
+// ---------------------------------------------------------------- wizard di primo avvio
+
+async function openWizard() {
+  state.wizardStep = 1;
+  try {
+    const soglie = await api('api/soglie');
+    $('#wizard-soglia-bassa').value = soglie.bassa;
+    $('#wizard-soglia-alta').value = soglie.alta;
+  } catch { /* si usano i valori predefiniti del campo */ }
+  renderWizardStep();
+  showSheet('#wizard-sheet');
+}
+
+function renderWizardStep() {
+  $$('[data-wizard-step]').forEach((el) => { el.hidden = Number(el.dataset.wizardStep) !== state.wizardStep; });
+  $('#wizard-steps').textContent = `Passo ${state.wizardStep} di ${WIZARD_STEPS}`;
+  $('#wizard-back').hidden = state.wizardStep === 1;
+  $('#wizard-next').textContent = state.wizardStep === WIZARD_STEPS ? 'Inizia' : 'Avanti';
+}
+
+function setWizardSourceType(sorgente) {
+  $$('#wizard-source-type button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.wizardSource === sorgente)));
+  $('#wizard-nightscout-fields').hidden = sorgente !== 'nightscout';
+  $('#wizard-xdrip-fields').hidden = sorgente !== 'xdrip';
+}
+
+function wizardSourceBody() {
+  const sorgente = $('#wizard-source-type [aria-checked="true"]')?.dataset.wizardSource || 'glooko';
+  return {
+    sorgente,
+    nightscout_url: $('#wizard-nightscout-url').value.trim(),
+    nightscout_token: $('#wizard-nightscout-token').value.trim(),
+    xdrip_url: $('#wizard-xdrip-url').value.trim(),
+  };
+}
+
+async function testWizardSourceConnection() {
+  const body = wizardSourceBody();
+  const err = $('#wizard-source-error');
+  err.textContent = '';
+  if (body.sorgente === 'glooko') {
+    err.textContent = 'Le credenziali Glooko si inseriscono nella Configurazione dell\'add-on.';
+    return;
+  }
+  try {
+    const r = await api('api/sorgente_dati/test', { method: 'POST', body });
+    err.textContent = r.ok ? 'Connessione riuscita.' : (r.errore || 'Connessione non riuscita.');
+  } catch (e) {
+    err.textContent = e.message;
+  }
+}
+
+async function wizardNext() {
+  if (state.wizardStep === 2) {
+    try { await api('api/sorgente_dati', { method: 'PUT', body: wizardSourceBody() }); }
+    catch (err) { $('#wizard-source-error').textContent = err.message; return; }
+  }
+  if (state.wizardStep === 3) {
+    try {
+      await api('api/soglie', { method: 'PUT', body: {
+        bassa: $('#wizard-soglia-bassa').value, alta: $('#wizard-soglia-alta').value,
+      } });
+    } catch { /* non blocca il wizard: si puo' correggere dopo in Impostazioni */ }
+  }
+  if (state.wizardStep === WIZARD_STEPS) {
+    await completeWizard();
+    return;
+  }
+  state.wizardStep += 1;
+  renderWizardStep();
+}
+
+function wizardBack() {
+  if (state.wizardStep > 1) { state.wizardStep -= 1; renderWizardStep(); }
+}
+
+async function completeWizard() {
+  try { await api('api/wizard/completa', { method: 'POST' }); } catch { /* si puo' ignorare */ }
+  hideSheet('#wizard-sheet');
+  await refreshStatus();
+  loadSourceSettings();
+}
+
 async function generateReport() {
   const btn = $('#report-genera');
   const body = {};
@@ -2179,6 +2265,21 @@ function bind() {
   $$('#source-type button').forEach((b) => b.addEventListener('click', () => setSourceType(b.dataset.source)));
   $('#source-test').addEventListener('click', testSourceConnection);
   $('#source-save').addEventListener('click', saveSourceSettings);
+
+  // Wizard di primo avvio
+  $$('#wizard-source-type button').forEach((b) => b.addEventListener('click', () => setWizardSourceType(b.dataset.wizardSource)));
+  $('#wizard-source-test').addEventListener('click', testWizardSourceConnection);
+  $('#wizard-ciqual-import').addEventListener('click', async () => {
+    try {
+      await api('api/ciqual/importa', { method: 'POST' });
+      $('#wizard-ciqual-hint').textContent = 'Download avviato: continua in background, lo trovi anche in Impostazioni.';
+    } catch (err) {
+      $('#wizard-ciqual-hint').textContent = err.message;
+    }
+  });
+  $('#wizard-next').addEventListener('click', wizardNext);
+  $('#wizard-back').addEventListener('click', wizardBack);
+  $('#wizard-skip').addEventListener('click', completeWizard);
   const goToTrendDay = (ev) => {
     const el = ev.target.closest('[data-day]');
     if (!el) return;
@@ -2232,6 +2333,7 @@ async function init() {
   state.day = state.today;
   await loadDay();
   setInterval(refreshStatus, 5 * 60 * 1000);
+  if (state.stato && !state.stato.wizard_completato) openWizard();
 }
 
 init();

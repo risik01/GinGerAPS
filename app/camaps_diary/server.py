@@ -385,6 +385,7 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
         return jsonify(
             versione=__version__,
             sorgente_dati=s.get("sorgente_dati", "glooko"),
+            wizard_completato=bool(s.get("wizard_completato")),
             sync_stato=s.get("sync_stato", "mai"),
             sync_errore=s.get("sync_errore") or None,
             ultima_sync_utc=s.get("ultima_sync_utc"),
@@ -493,6 +494,35 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
         except DataSourceError as exc:
             return jsonify(ok=False, errore=str(exc))
         return jsonify(source.status())
+
+    @app.get("/api/soglie")
+    def soglie_get():
+        s = g.store
+        return jsonify(
+            bassa=float(s.get("soglia_bassa", 70)), alta=float(s.get("soglia_alta", 180)),
+            molto_bassa=float(s.get("soglia_molto_bassa", 54)), molto_alta=float(s.get("soglia_molto_alta", 250)),
+        )
+
+    @app.put("/api/soglie")
+    def soglie_put():
+        body = request.get_json(force=True) or {}
+        for campo, chiave in (("bassa", "soglia_bassa"), ("alta", "soglia_alta"),
+                              ("molto_bassa", "soglia_molto_bassa"), ("molto_alta", "soglia_molto_alta")):
+            if campo in body and body[campo] not in (None, ""):
+                try:
+                    g.store.set(chiave, float(body[campo]))
+                except (TypeError, ValueError):
+                    abort(400, f"Valore non valido per {campo}.")
+        return jsonify(ok=True)
+
+    @app.get("/api/wizard")
+    def wizard_get():
+        return jsonify(completato=bool(g.store.get("wizard_completato")))
+
+    @app.post("/api/wizard/completa")
+    def wizard_completa():
+        g.store.set("wizard_completato", "1")
+        return jsonify(ok=True)
 
     # -- dati -----------------------------------------------------------------
 

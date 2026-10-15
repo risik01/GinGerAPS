@@ -446,6 +446,76 @@
     </div>
   </div>
 
+  <!-- Wizard di primo avvio -->
+  <div class="sheet fullscreen" id="wizard-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="wizard-title">Benvenuto in Diario CamAPS</h2>
+      </header>
+      <div class="sheet-body">
+        <p class="wizard-steps" id="wizard-steps"></p>
+
+        <div data-wizard-step="1">
+          <p>Diario CamAPS affianca ai dati del tuo microinfusore un diario dei pasti, foto,
+            report per il diabetologo e insight settimanali.</p>
+          <p class="form-error" style="color:var(--low)">Non è un dispositivo medico e non dà indicazioni di
+            terapia. Registra, visualizza e confronta i tuoi dati: le stime nutrizionali sono
+            approssimative e non sostituiscono il parere del tuo diabetologo.</p>
+        </div>
+
+        <div data-wizard-step="2" hidden>
+          <h3>Da dove arrivano i tuoi dati?</h3>
+          <div class="chips" id="wizard-source-type" role="radiogroup" aria-label="Sorgente dati">
+            <button type="button" role="radio" aria-checked="true" data-wizard-source="glooko">Glooko</button>
+            <button type="button" role="radio" aria-checked="false" data-wizard-source="nightscout">Nightscout</button>
+            <button type="button" role="radio" aria-checked="false" data-wizard-source="xdrip">xDrip+</button>
+          </div>
+          <p class="hint">Email e password di Glooko si inseriscono nella Configurazione dell'add-on, non qui.</p>
+          <div id="wizard-nightscout-fields" hidden>
+            <label class="field">Indirizzo Nightscout
+              <input type="url" id="wizard-nightscout-url" placeholder="https://il-tuo-sito.herokuapp.com" autocomplete="off">
+            </label>
+            <label class="field">Token (facoltativo)
+              <input type="text" id="wizard-nightscout-token" autocomplete="off">
+            </label>
+          </div>
+          <div id="wizard-xdrip-fields" hidden>
+            <label class="field">Indirizzo del servizio web di xDrip+
+              <input type="url" id="wizard-xdrip-url" placeholder="http://192.168.1.50:17580" autocomplete="off">
+            </label>
+          </div>
+          <p class="form-error" id="wizard-source-error" role="alert"></p>
+          <button type="button" class="secondary" id="wizard-source-test">Testa connessione</button>
+        </div>
+
+        <div data-wizard-step="3" hidden>
+          <h3>Range obiettivo</h3>
+          <p class="hint">Con Glooko questi valori arrivano da soli dal profilo CamAPS: li puoi lasciare come sono.
+            Con Nightscout o xDrip+ impostali tu.</p>
+          <div class="two">
+            <label class="field">Sotto (mg/dL)<input type="number" id="wizard-soglia-bassa" inputmode="decimal"></label>
+            <label class="field">Sopra (mg/dL)<input type="number" id="wizard-soglia-alta" inputmode="decimal"></label>
+          </div>
+        </div>
+
+        <div data-wizard-step="4" hidden>
+          <h3>Database alimenti</h3>
+          <p>Scarica la tabella Ciqual (ANSES, alimenti generici): la trovi anche più tardi in
+            Impostazioni se preferisci farlo dopo.</p>
+          <button type="button" class="secondary" id="wizard-ciqual-import">Scarica la tabella alimenti</button>
+          <p class="hint" id="wizard-ciqual-hint"></p>
+        </div>
+      </div>
+      <footer class="sheet-foot">
+        <button type="button" class="link-btn" id="wizard-skip">Salta per ora</button>
+        <div class="foot-actions">
+          <button type="button" class="secondary" id="wizard-back" hidden>Indietro</button>
+          <button type="button" class="primary" id="wizard-next">Avanti</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" hidden></div>
   <script type="module" src="static/app.js"></script>
 </body>
