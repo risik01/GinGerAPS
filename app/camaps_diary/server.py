@@ -28,7 +28,7 @@ from . import report
 from .analysis import (agp_profile, calendar_month, day_payload, food_occurrences, ha_snapshot,
                        period_summary, steps_summary)
 from .diary import (MEAL_TYPES, NOTE_KINDS, DiaryError, create_food, create_note, delete_food,
-                    delete_meal, delete_note, food_by_barcode, frequent_foods, get_food, get_meal,
+                    delete_meal, delete_note, diet_summary, food_by_barcode, frequent_foods, get_food, get_meal,
                     notes_for_day, save_meal, save_recipe, search_diary, search_foods, update_food)
 from .foto import VisionError
 from .datasource import DataSourceError
@@ -204,7 +204,7 @@ class CiqualImporter:
     def _run(self, force: bool) -> None:
         store = Store(self.db_path)
         try:
-            if not force and ciqual.count(store) > 0:
+            if not force and ciqual.count(store) > 0 and not ciqual.needs_macros(store):
                 return
             store.set("ciqual_stato", "in_corso")
             n = ciqual.import_ciqual(store, latest_url=os.environ.get("DIARIO_CIQUAL_URL", ciqual.ZENODO_LATEST))
@@ -546,6 +546,14 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
         if day_from > day_to or (day_to - day_from).days > 366:
             abort(400, "Periodo non valido.")
         return jsonify(steps_summary(g.store, day_from, day_to))
+
+    @app.get("/api/dieta")
+    def dieta_periodo():
+        day_to = _day(request.args.get("a"), today())
+        day_from = _day(request.args.get("da"), day_to - timedelta(days=6))
+        if day_from > day_to or (day_to - day_from).days > 366:
+            abort(400, "Periodo non valido.")
+        return jsonify(diet_summary(g.store, day_from, day_to))
 
     @app.get("/api/calendario")
     def calendario():

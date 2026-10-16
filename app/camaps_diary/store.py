@@ -155,6 +155,16 @@ MIGRATIONS = (
     ("food", "servings", "INTEGER"),
     ("meal", "created_from", "TEXT"),
     ("meal", "analysis_json", "TEXT"),
+    ("meal_item", "kcal", "REAL"),
+    ("meal_item", "protein_g", "REAL"),
+    ("meal_item", "fat_g", "REAL"),
+    ("meal_item", "sugars_g", "REAL"),
+    ("meal_item", "fiber_g", "REAL"),
+    ("recipe_item", "kcal", "REAL"),
+    ("recipe_item", "protein_g", "REAL"),
+    ("recipe_item", "fat_g", "REAL"),
+    ("recipe_item", "sugars_g", "REAL"),
+    ("recipe_item", "fiber_g", "REAL"),
 )
 
 
@@ -167,6 +177,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)
         self._migrate()
+        self._backfill_nutrienti()
         self._backfill_food_fts()
         from .ciqual import ensure_schema
         ensure_schema(self)
@@ -177,6 +188,22 @@ class Store:
             if column not in cols:
                 self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
         self.db.commit()
+
+    def _backfill_nutrienti(self):
+        """Una volta sola: i pasti salvati prima dei nutrienti ricevono i valori
+        dell'alimento collegato (dove l'alimento li ha), proporzionati ai grammi."""
+        if self.get("nutrienti_backfill_v1"):
+            return
+        for tabella, join_col in (("meal_item", "food_id"), ("recipe_item", "ingredient_food_id")):
+            sets = ", ".join(
+                f"{col} = (SELECT f.{fcol} * {tabella}.grams / 100.0 FROM food f WHERE f.id = {tabella}.{join_col})"
+                for col, fcol in (("kcal", "kcal_per_100g"), ("protein_g", "protein_per_100g"),
+                                  ("fat_g", "fat_per_100g"), ("sugars_g", "sugars_per_100g"),
+                                  ("fiber_g", "fiber_per_100g")))
+            self.db.execute(
+                f"UPDATE {tabella} SET {sets} WHERE {join_col} IS NOT NULL AND grams > 0 "
+                "AND kcal IS NULL AND protein_g IS NULL AND fat_g IS NULL AND sugars_g IS NULL AND fiber_g IS NULL")
+        self.set("nutrienti_backfill_v1", "1")
 
     def _backfill_food_fts(self):
         """La tabella FTS e' a contenuto esterno: se non e' mai stata popolata

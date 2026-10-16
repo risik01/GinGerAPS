@@ -28,7 +28,7 @@ def _fake_client(resp=None, side_effect=None):
 def test_photo_analysis_schema_valida_un_pasto_tipico():
     analisi = foto.PhotoAnalysis(
         items=[foto.FoodItem(name_it="pasta al pomodoro", category="primo", portion_label="piatto medio",
-                              grams_estimate=180, grams_min=150, grams_max=220, carbs_g=48.0,
+                              grams_estimate=180, grams_min=150, grams_max=220, carbs_g=48.0, kcal=420, protein_g=14, fat_g=12, sugars_g=6, fiber_g=5,
                               confidence=0.8, reason_short="piatto pieno a livello del bordo")],
         reference_object="forchetta", plate_size_guess="medio", warnings=[],
     )

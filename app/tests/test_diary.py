@@ -172,3 +172,69 @@ def test_modifica_ricetta_ricalcola_e_sostituisce_ingredienti(store):
     assert modificata["nome"] == "Risotto bianco"
     assert modificata["porzione_g"] == pytest.approx(150.0)  # 300 g / 2 porzioni
     assert len(diary.recipe_items(store, ricetta["id"])) == 1
+
+
+class TestNutrienti:
+    """Calorie, proteine, grassi, zuccheri e fibre accanto ai carboidrati."""
+
+    def _pasta(self, store):
+        return diary.create_food(store, {
+            "nome": "Pasta", "carbo_100g": 75, "proteine_100g": 12, "grassi_100g": 1.5,
+            "zuccheri_100g": 3, "fibra_100g": 3, "kcal_100g": 350})
+
+    def test_voce_con_alimento_calcola_nutrienti_dai_grammi(self, store):
+        pasta = self._pasta(store)
+        pasto = diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "pranzo",
+                                        "voci": [{"alimento_id": pasta["id"], "grammi": 80}]})
+        n = pasto["voci"][0]["nutrienti"]
+        assert n == {"kcal": 280.0, "proteine": 9.6, "grassi": 1.2, "zuccheri": 2.4, "fibra": 2.4}
+        assert pasto["nutrienti"]["kcal"] == 280.0
+        assert pasto["nutrienti"]["senza_dato"]["kcal"] == 0
+
+    def test_dato_mancante_non_diventa_zero_e_si_segnala(self, store):
+        pasta = self._pasta(store)
+        senza = diary.create_food(store, {"nome": "Sconosciuto", "carbo_100g": 10})
+        pasto = diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "pranzo", "voci": [
+            {"alimento_id": pasta["id"], "grammi": 100}, {"alimento_id": senza["id"], "grammi": 50}]})
+        assert pasto["voci"][1]["nutrienti"]["kcal"] is None
+        assert pasto["nutrienti"]["kcal"] == 350.0
+        assert pasto["nutrienti"]["senza_dato"]["kcal"] == 1
+        assert pasto["nutrienti"]["carbo"] == 80.0
+
+    def test_voce_libera_accetta_nutrienti_indicati(self, store):
+        pasto = diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "cena", "voci": [{
+            "descrizione": "Pizza", "carbo_g": 80, "nutrienti": {"kcal": "700", "grassi": 25, "proteine": "x", "fibra": -3}}]})
+        n = pasto["voci"][0]["nutrienti"]
+        assert n["kcal"] == 700.0 and n["grassi"] == 25.0
+        assert n["proteine"] is None and n["fibra"] is None  # non numerico / negativo: scartati
+
+    def test_ricetta_aggrega_solo_se_tutti_gli_ingredienti_hanno_il_dato(self, store):
+        pasta = self._pasta(store)
+        senza = diary.create_food(store, {"nome": "Sugo misterioso", "carbo_100g": 5})
+        completa = diary.save_recipe(store, {"nome": "Pasta in bianco", "voci": [
+            {"alimento_id": pasta["id"], "grammi": 100}]})
+        assert completa["kcal_100g"] == 350.0 and completa["proteine_100g"] == 12.0
+        parziale = diary.save_recipe(store, {"nome": "Pasta al sugo", "voci": [
+            {"alimento_id": pasta["id"], "grammi": 100}, {"alimento_id": senza["id"], "grammi": 100}]})
+        assert parziale["kcal_100g"] is None
+
+    def test_riepilogo_dieta_per_giorno_e_media(self, store):
+        from datetime import date
+        pasta = self._pasta(store)
+        for giorno, g in (("2026-10-15", 100), ("2026-10-16", 200)):
+            diary.save_meal(store, {"ora": f"{giorno}T13:00", "tipo": "pranzo",
+                                    "voci": [{"alimento_id": pasta["id"], "grammi": g}]})
+        r = diary.diet_summary(store, date(2026, 10, 14), date(2026, 10, 16))
+        assert [d["giorno"] for d in r["giorni"]] == ["2026-10-15", "2026-10-16"]
+        assert r["giorni"][1]["kcal"] == 700.0
+        assert r["media"]["kcal"] == 525.0 and r["giorni_con_pasti"] == 2
+
+    def test_pasti_vecchi_ricevono_i_nutrienti_dal_backfill(self, store):
+        pasta = self._pasta(store)
+        pasto = diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "pranzo",
+                                        "voci": [{"alimento_id": pasta["id"], "grammi": 100}]})
+        store.db.execute("UPDATE meal_item SET kcal = NULL, protein_g = NULL, fat_g = NULL, "
+                         "sugars_g = NULL, fiber_g = NULL")
+        store.set("nutrienti_backfill_v1", "")
+        store._backfill_nutrienti()
+        assert diary.get_meal(store, pasto["id"])["voci"][0]["nutrienti"]["kcal"] == 350.0

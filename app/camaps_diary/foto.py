@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - fallback se il pacchetto non c'e'
 MAX_DIM = 1200
 JPEG_QUALITY = 85
 DEFAULT_MODEL = "claude-sonnet-5"
-MAX_TOKENS = 1500
+MAX_TOKENS = 2500
 TIMEOUT_S = 30.0
 
 
@@ -39,6 +39,11 @@ class FoodItem(BaseModel):
     grams_min: int
     grams_max: int
     carbs_g: float = Field(description="Carboidrati stimati per la porzione (grams_estimate), non per 100 g")
+    kcal: float = Field(ge=0, description="Calorie stimate per la porzione (grams_estimate)")
+    protein_g: float = Field(ge=0, description="Proteine in grammi per la porzione")
+    fat_g: float = Field(ge=0, description="Grassi totali in grammi per la porzione, condimenti compresi")
+    sugars_g: float = Field(ge=0, description="Zuccheri semplici in grammi per la porzione (compresi nei carboidrati)")
+    fiber_g: float = Field(ge=0, description="Fibre in grammi per la porzione")
     confidence: float = Field(ge=0, le=1)
     reason_short: str = Field(description="Massimo una frase: perche' questa stima")
 
@@ -60,15 +65,18 @@ SYSTEM_PROMPT_IT = (
     "- Sii prudente e onesto sulla affidabilita': se il piatto e' parzialmente nascosto, sfocato, o il "
     "condimento non e' valutabile, abbassa la confidenza e scrivilo in reason_short o in warnings.\n"
     "- Calcola i carboidrati sulla porzione stimata usando valori medi delle tabelle nutrizionali italiane.\n"
+    "- Per ogni alimento stima anche calorie, proteine, grassi (compresi olio e condimenti visibili), zuccheri "
+    "e fibre della stessa porzione, con le stesse tabelle. Gli zuccheri sono compresi nei carboidrati. "
+    "Le calorie devono essere coerenti con i macronutrienti (circa 4 kcal/g carboidrati e proteine, 9 kcal/g grassi).\n"
     "- Se la foto non mostra cibo, o e' troppo sfocata/vuota per dire qualcosa, restituisci una lista "
     "items vuota e spiega il motivo in warnings: non inventare alimenti per riempire la risposta.\n"
     "- Non dare MAI consigli su insulina, dosi, boli o terapia. Non commentare la salute della persona: "
-    "il tuo unico compito e' stimare cosa c'e' nel piatto e quanti carboidrati contiene."
+    "il tuo unico compito e' stimare cosa c'e' nel piatto e i suoi valori nutrizionali."
 )
 
 
 def _build_user_prompt(hint: str | None) -> str:
-    base = "Analizza la foto di questo pasto e stima gli alimenti presenti con i relativi carboidrati."
+    base = "Analizza la foto di questo pasto e stima gli alimenti presenti con i relativi carboidrati e valori nutrizionali."
     if hint and hint.strip():
         base += (f"\n\nLa persona ha scritto: \"{hint.strip()}\". Usa questa informazione come prioritaria: "
                   "se dice che si tratta di una pizza intera, non interpretarla come due fette.")

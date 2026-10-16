@@ -15,6 +15,7 @@ import calendar as cal_mod
 from datetime import date, datetime, time, timedelta
 
 from .camaps_entries import GlucoseIndex, classify
+from . import nutrienti as nutri
 from .diary import meals_between, notes_for_day
 from .stats import daily_summary
 from .store import Store
@@ -413,6 +414,7 @@ def day_payload(store: Store, day: date) -> dict:
                      for k, spans in modes.items() for a, b in spans],
         "eventi": events,
         "pasti": day_meals,
+        "nutrienti": nutri.somma_totali([m["nutrienti"] for m in day_meals]),
         "note": notes_for_day(store, day.isoformat()),
         "riepilogo": summary,
         "ultimo_dato": last,

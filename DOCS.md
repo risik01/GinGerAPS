@@ -45,6 +45,15 @@ I passi dettagliati, anche da far eseguire a un agent, sono in
 
   Il tipo "Correzione ipo" serve per annotare cosa hai preso durante
   un'ipoglicemia: non entra nei rapporti tra grammi e unità.
+- **Alimentazione**: oltre ai carboidrati, ogni alimento ha calorie, proteine,
+  grassi, zuccheri e fibre ogni 100 g (dalla tabella Ciqual, da Open Food
+  Facts o scritti da te). Nell'editor del pasto vedi i valori di ogni
+  alimento e il totale del pasto; nella scheda Pasti trovi il totale del
+  giorno con la ripartizione dell'energia e il dettaglio per pasto e per
+  alimento; in Andamento le medie e il grafico del periodo. Dove manca un
+  dato il totale è indicato come parziale: un valore sconosciuto non viene
+  mai contato come zero. Le stime della foto includono gli stessi valori, ma
+  restano una bozza che confermi tu.
 - **Alimenti**: il tuo elenco personale, con carboidrati per 100 g e porzione
   abituale. Ci sono tre fonti:
   - la **tabella Ciqual** dell'ANSES: circa 3.000 alimenti generici, cioè

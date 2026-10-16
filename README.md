@@ -20,8 +20,10 @@ Non sostituisce il parere del tuo diabetologo.
   la pizza?").
 - **Pasti**: inserimento rapido con alimenti frequenti, ricerca (tabella
   Ciqual e Open Food Facts), codice a barre, foto con stima IA opzionale dei
-  carboidrati (sempre una bozza da confermare, mai salvata da sola), ricette
-  personali.
+  carboidrati e dei valori nutrizionali (sempre una bozza da confermare, mai
+  salvata da sola), ricette personali. **Alimentazione**: calorie, proteine,
+  grassi, zuccheri e fibre per alimento, per pasto e per giorno, con la
+  ripartizione dell'energia e le medie nel periodo.
 - **Andamento**: profilo AGP, insight settimanali in linguaggio semplice
   (variazione rispetto alla settimana prima, fasce orarie critiche, pasto con
   la risposta migliore/peggiore — tutte osservazioni descrittive, mai

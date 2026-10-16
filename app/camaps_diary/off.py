@@ -70,11 +70,28 @@ class OpenFoodFacts:
             serving = round(float(serving)) if serving else None
         except (TypeError, ValueError):
             serving = None
+        nutr = p.get("nutriments") or {}
+
+        def num(key, hi=1000):
+            try:
+                v = float(nutr.get(key))
+            except (TypeError, ValueError):
+                return None
+            return round(v, 1) if 0 <= v <= hi else None
+
+        zuccheri = num("sugars_100g", 100)
+        if zuccheri is not None and zuccheri > carbs + 2:
+            zuccheri = None  # gli zuccheri non possono superare i carboidrati totali
         return {
             "barcode": p.get("code"),
             "nome": name,
             "marca": (p.get("brands") or "").split(",")[0].strip() or None,
             "carbo_100g": carbs,
+            "zuccheri_100g": zuccheri,
+            "fibra_100g": num("fiber_100g", 100),
+            "proteine_100g": num("proteins_100g", 100),
+            "grassi_100g": num("fat_100g", 100),
+            "kcal_100g": num("energy-kcal_100g", 900),
             "porzione_g": serving,
             "confezione": p.get("quantity"),
             "fonte": "openfoodfacts",

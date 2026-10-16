@@ -102,6 +102,7 @@
         </button>
       </header>
       <div class="day-content" id="pasti-content">
+        <section class="diet-card" id="diet-card" hidden aria-label="Alimentazione del giorno"></section>
         <div class="meal-tiles" id="log"></div>
         <ul class="log-extra" id="log-extra" hidden></ul>
       </div>
@@ -155,6 +156,17 @@
         <div class="table-wrap">
           <table class="trend" id="steps-table"></table>
         </div>
+      </div>
+
+      <div class="steps-zone diet-zone">
+        <h2>Alimentazione</h2>
+        <dl class="figures" id="diet-figures"></dl>
+        <div class="diet-chart" id="diet-chart"></div>
+        <div class="table-wrap">
+          <table class="trend" id="diet-table"></table>
+        </div>
+        <p class="fineprint">Medie sui giorni con almeno un pasto registrato. Alimenti senza valori
+          nutrizionali non entrano nei totali: dove manca un dato il totale è parziale e lo trovi indicato.</p>
       </div>
 
       <div class="report-zone">
@@ -312,6 +324,7 @@
           <input type="file" id="meal-photo-input" accept="image/*" hidden>
         </div>
         <ul class="items" id="meal-items"></ul>
+        <div class="meal-nutri" id="meal-nutri" aria-live="polite"></div>
         <div class="dish-zone"><button type="button" class="link-btn" id="meal-dish">Salva come ricetta</button></div>
         <div class="adder">
           <div class="adder-tabs" role="tablist" aria-label="Aggiungi alimento">
@@ -381,6 +394,14 @@
         <div class="two">
           <label class="field">Carboidrati per 100 g<input name="carbo_100g" inputmode="decimal" required></label>
           <label class="field">Porzione abituale (g)<input name="porzione_g" inputmode="decimal" placeholder="Facoltativa"></label>
+        </div>
+        <p class="food-macros-title">Altri valori ogni 100 g (facoltativi)</p>
+        <div class="food-macros">
+          <label class="field">Calorie (kcal)<input name="kcal_100g" inputmode="decimal"></label>
+          <label class="field">Proteine (g)<input name="proteine_100g" inputmode="decimal"></label>
+          <label class="field">Grassi (g)<input name="grassi_100g" inputmode="decimal"></label>
+          <label class="field">Zuccheri (g)<input name="zuccheri_100g" inputmode="decimal"></label>
+          <label class="field">Fibre (g)<input name="fibra_100g" inputmode="decimal"></label>
         </div>
         <label class="field">Codice a barre<input name="barcode" inputmode="numeric" autocomplete="off" placeholder="Facoltativo"></label>
         <p class="hint" id="food-source"></p>

@@ -55,6 +55,9 @@
   --carb-soft: rgba(154, 95, 7, 0.18);
   --ins: #3f45b0;
   --ins-soft: rgba(63, 69, 176, 0.14);
+  --prot: #1c6fa0;
+  --fat: #a8407a;
+  --kcal: #b0432b;
   --act: #0e7c6b;
   --low: #d7373f;
   --tabs-h: 64px;
@@ -85,6 +88,9 @@
     --carb-soft: rgba(230, 168, 77, 0.22);
     --ins: #a4a8f7;
     --ins-soft: rgba(164, 168, 247, 0.2);
+    --prot: #6cc0ea;
+    --fat: #ee93bd;
+    --kcal: #ff9a7a;
     --act: #4fcab0;
     --low: #ff8077;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -313,6 +319,7 @@ svg { display: block; }
 }
 .figures div:has(.ins) { border-left-color: var(--ins); }
 .figures div:has(.carb) { border-left-color: var(--carb); }
+.figures div:has(.kc) { border-left-color: var(--kcal); }
 .figures div:has(.act) { border-left-color: var(--act); grid-column: span 2; display: flex; align-items: center; justify-content: space-between; }
 .figures div:has(.inrange) { border-left-color: var(--inrange); }
 .figures dt { font-size: 13.5px; color: var(--muted); }
@@ -325,6 +332,7 @@ svg { display: block; }
 .figures .sub { display: block; font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 2px; }
 .figures .ins { color: var(--ins); }
 .figures .carb { color: var(--carb); }
+.figures .kc { color: var(--kcal); }
 .figures .act { color: var(--act); }
 .figures .inrange { color: var(--inrange); }
 
@@ -964,3 +972,65 @@ svg { display: block; }
 }
 .ai-notices li { font-size: 13px; color: var(--muted); padding-left: 16px; position: relative; }
 .ai-notices li::before { content: "\2022"; position: absolute; left: 2px; color: var(--carb); }
+
+
+/* -- Alimentazione: calorie e macronutrienti ------------------------------ */
+.diet-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm); padding: 14px 16px 12px; margin: 0 0 14px;
+}
+.diet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.diet-head h2 { font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 17px; margin: 0; }
+.diet-kcal {
+  font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 30px; color: var(--kcal);
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.diet-kcal small { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 3px; }
+.macro-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 10px 0 8px; background: var(--line); }
+.macro-bar span { display: block; min-width: 2px; }
+.macro-bar .m-carb, .dot-carb { background: var(--carb); }
+.macro-bar .m-prot, .dot-prot { background: var(--prot); }
+.macro-bar .m-fat, .dot-fat { background: var(--fat); }
+.macro-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.macro-legend li { min-width: 0; font-size: 13px; color: var(--muted); }
+.macro-legend b { display: block; font-family: "Space Grotesk", sans-serif; font-size: 19px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.macro-legend b small { font-size: 12.5px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.macro-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.diet-extra { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.diet-partial { margin: 6px 0 0; font-size: 12.5px; color: var(--carb); }
+.diet-detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
+.diet-detail summary { cursor: pointer; font-weight: 700; font-size: 14px; padding: 6px 0; }
+.diet-meal { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.diet-meal:last-child { border-bottom: 0; }
+.diet-meal-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14.5px; }
+.diet-meal-head .kc { color: var(--kcal); font-variant-numeric: tabular-nums; }
+.diet-macros { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.diet-foods { list-style: none; margin: 4px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
+.diet-foods li { font-size: 13px; padding: 2px 0; }
+.diet-foods .diet-macros { display: block; }
+.imacro { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.imacro b { color: var(--kcal); font-weight: 700; }
+.meal-nutri {
+  display: none; margin: -4px 0 12px; padding: 10px 12px; border-radius: var(--radius-md);
+  background: var(--surface); border: 1px solid var(--line); font-size: 13.5px;
+}
+.meal-nutri.on { display: block; }
+.meal-nutri .macro-bar { margin: 6px 0; height: 9px; }
+.meal-nutri-row { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.meal-nutri-row b { color: var(--ink); }
+.meal-nutri .kc { color: var(--kcal); font-weight: 700; }
+.meal-tile-kcal {
+  position: absolute; top: 27px; left: 10px; z-index: 1; font-size: 12px; color: var(--kcal);
+  font-variant-numeric: tabular-nums; font-weight: 700;
+}
+.meal-tile.has-photo .meal-tile-kcal { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.food-macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.food-macros-title { font-size: 13.5px; color: var(--muted); margin: 4px 0 -2px; }
+.free-form .free-optional { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; grid-column: 1 / -1; }
+.ai-item-macros { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.diet-chart { width: 100%; margin: 6px 0 10px; }
+.diet-chart .grid { stroke: var(--line); stroke-width: 1; }
+.diet-chart .axis { fill: var(--muted); font-size: 9px; font-family: "Space Grotesk", sans-serif; }
+.diet-chart .b-carb { fill: var(--carb); }
+.diet-chart .b-prot { fill: var(--prot); }
+.diet-chart .b-fat { fill: var(--fat); }

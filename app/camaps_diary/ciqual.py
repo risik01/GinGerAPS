@@ -3,7 +3,7 @@ carboidrati disponibili per 100 g (fibra esclusa, come nelle etichette UE).
 
 I dati sono aperti e riutilizzabili citando la fonte. L'add-on li scarica
 una volta sola dall'archivio pubblico Zenodo dove ANSES li pubblica, e tiene
-solo carboidrati, zuccheri e fibra.
+solo carboidrati, zuccheri, fibra, calorie, proteine e grassi.
 
 I nomi sono in francese e inglese: la ricerca accetta parole italiane e le
 traduce con il dizionario SYNONYMS qui sotto.
@@ -18,7 +18,7 @@ import unicodedata
 import requests
 
 ZENODO_LATEST = "https://zenodo.org/api/records/17550132/versions/latest"
-CONST = {31000: "carbo", 32000: "zuccheri", 34100: "fibra"}
+CONST = {31000: "carbo", 32000: "zuccheri", 34100: "fibra", 328: "kcal", 25000: "proteine", 40000: "grassi"}
 
 log = logging.getLogger("diario")
 
@@ -100,7 +100,17 @@ def ensure_schema(store) -> None:
     cols = {r[1] for r in store.db.execute("PRAGMA table_info(ciqual)")}
     if "ricerca_en" not in cols:
         store.db.execute("ALTER TABLE ciqual ADD COLUMN ricerca_en TEXT")
-        store.db.commit()
+    for extra in ("kcal", "proteine", "grassi"):
+        if extra not in cols:
+            store.db.execute(f"ALTER TABLE ciqual ADD COLUMN {extra} REAL")
+    store.db.commit()
+
+
+def needs_macros(store) -> bool:
+    """True se la tabella e' stata importata prima di aggiungere calorie/proteine/grassi."""
+    ensure_schema(store)
+    return store.db.execute("SELECT COUNT(*) FROM ciqual").fetchone()[0] > 0 and \
+        store.db.execute("SELECT COUNT(*) FROM ciqual WHERE kcal IS NOT NULL").fetchone()[0] == 0
 
 
 def _synonyms(tok: str) -> list[str]:
@@ -191,7 +201,8 @@ def import_ciqual(store, http: requests.Session | None = None, latest_url: str =
             code = _field(block, "alim_code")
             if code and code.strip().isdigit():
                 foods[int(code)] = {"fr": _field(block, "alim_nom_fr"), "en": _field(block, "alim_nom_eng"),
-                                    "carbo": None, "zuccheri": None, "fibra": None}
+                                    "carbo": None, "zuccheri": None, "fibra": None,
+                                    "kcal": None, "proteine": None, "grassi": None}
     log.info("Ciqual: %d alimenti", len(foods))
 
     with http.get(compo_f["links"]["self"], stream=True, timeout=300) as r:
@@ -206,16 +217,27 @@ def import_ciqual(store, http: requests.Session | None = None, latest_url: str =
             foods[int(code)][CONST[int(const)]] = _number(_field(block, "teneur"))
 
     rows = [(code, f["fr"], f["en"], f["carbo"], f["zuccheri"], f["fibra"],
+             f["kcal"], f["proteine"], f["grassi"],
              normalize(f"{f['fr'] or ''} | {f['en'] or ''}"), normalize(f["en"] or ""))
             for code, f in foods.items() if f["carbo"] is not None]
     if not rows:
         raise RuntimeError("La tabella Ciqual scaricata non contiene valori di carboidrati")
     store.db.execute("DELETE FROM ciqual")
     store.db.executemany(
-        "INSERT INTO ciqual(code, nome_fr, nome_en, carbo, zuccheri, fibra, ricerca, ricerca_en) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ciqual(code, nome_fr, nome_en, carbo, zuccheri, fibra, kcal, proteine, grassi, "
+        "ricerca, ricerca_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows)
     store.db.commit()
+    # Gli alimenti Ciqual gia' nel diario nascono con i soli carboidrati: ora che
+    # la tabella ha anche calorie/proteine/grassi, li completa (e i pasti che li usano).
+    for col, src in (("kcal_per_100g", "kcal"), ("protein_per_100g", "proteine"), ("fat_per_100g", "grassi"),
+                     ("sugars_per_100g", "zuccheri"), ("fiber_per_100g", "fibra")):
+        store.db.execute(
+            f"UPDATE food SET {col} = (SELECT c.{src} FROM ciqual c WHERE c.code = CAST(food.ref_code AS INTEGER)) "
+            f"WHERE source = 'ciqual' AND {col} IS NULL AND ref_code IS NOT NULL")
+    store.db.commit()
+    store.set("nutrienti_backfill_v1", "")
+    store._backfill_nutrienti()
     store.set("ciqual_versione", version)
     store.set("ciqual_alimenti", len(rows))
     return len(rows)
@@ -250,5 +272,8 @@ def search(store, query: str, limit: int = 25) -> list[dict]:
         "carbo_100g": r["carbo"],
         "zuccheri_100g": r["zuccheri"],
         "fibra_100g": r["fibra"],
+        "kcal_100g": r["kcal"],
+        "proteine_100g": r["proteine"],
+        "grassi_100g": r["grassi"],
         "fonte": "ciqual",
     } for r in rows]

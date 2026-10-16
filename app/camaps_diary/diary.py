@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from . import foto as foto_mod
+from . import nutrienti as nutri
 from .errors import DiaryError
 from .store import Store
 
@@ -194,7 +195,7 @@ def delete_food(store: Store, food_id: int) -> None:
 def recipe_items(store: Store, food_id: int) -> list[dict]:
     rows = store.db.execute("SELECT * FROM recipe_item WHERE food_id = ? ORDER BY id", (food_id,))
     return [{"id": r["id"], "alimento_id": r["ingredient_food_id"], "descrizione": r["description"],
-             "grammi": r["grams"], "carbo_g": r["carbs_g"]} for r in rows]
+             "grammi": r["grams"], "carbo_g": r["carbs_g"], "nutrienti": nutri.da_riga(r)} for r in rows]
 
 
 def save_recipe(store: Store, data: dict, food_id: int | None = None) -> dict:
@@ -219,6 +220,14 @@ def save_recipe(store: Store, data: dict, food_id: int | None = None) -> dict:
         raise DiaryError("Indica i grammi di ogni ingrediente per calcolare la ricetta.")
     carbs_100g = round(carbs_total / grams_total * 100, 2)
     portion = round(grams_total / servings, 1)
+    # Per 100 g di ricetta solo se TUTTI gli ingredienti hanno il dato: un valore
+    # parziale darebbe un totale sottostimato che sembra completo.
+    macro = {}
+    for k in nutri.NUTRIENTI:
+        valori = [it["nutrienti"][k] for it in items]
+        macro[k] = round(sum(valori) / grams_total * 100, 2) if all(v is not None for v in valori) else None
+    macro_sql = ", ".join(f"{col} = ?" for _, col in nutri.NUTRIENTI.values())
+    macro_vals = [macro[k] for k in nutri.NUTRIENTI]
 
     if food_id is None:
         cur = store.db.execute(
@@ -226,6 +235,7 @@ def save_recipe(store: Store, data: dict, food_id: int | None = None) -> dict:
             "VALUES (?, ?, ?, 'ricetta', ?, CURRENT_TIMESTAMP)",
             (name, carbs_100g, portion, servings))
         food_id = cur.lastrowid
+        store.db.execute(f"UPDATE food SET {macro_sql} WHERE id = ?", (*macro_vals, food_id))
     else:
         if not get_food(store, food_id):
             raise DiaryError("Ricetta non trovata.")
@@ -233,11 +243,13 @@ def save_recipe(store: Store, data: dict, food_id: int | None = None) -> dict:
             "UPDATE food SET name = ?, carbs_per_100g = ?, portion_g = ?, servings = ?, "
             "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (name, carbs_100g, portion, servings, food_id))
+        store.db.execute(f"UPDATE food SET {macro_sql} WHERE id = ?", (*macro_vals, food_id))
         store.db.execute("DELETE FROM recipe_item WHERE food_id = ?", (food_id,))
     store.db.executemany(
-        "INSERT INTO recipe_item(food_id, ingredient_food_id, description, grams, carbs_g) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [(food_id, it["food_id"], it["description"], it["grams"], it["carbs_g"]) for it in items])
+        "INSERT INTO recipe_item(food_id, ingredient_food_id, description, grams, carbs_g, "
+        "kcal, protein_g, fat_g, sugars_g, fiber_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(food_id, it["food_id"], it["description"], it["grams"], it["carbs_g"],
+          *(it["nutrienti"][k] for k in nutri.NUTRIENTI)) for it in items])
     store.db.commit()
     food = get_food(store, food_id)
     food["ingredienti"] = recipe_items(store, food_id)
@@ -276,6 +288,7 @@ def _clean_items(store: Store, items) -> list[dict]:
             carbs = grams * food["carbo_100g"] / 100
             desc = desc or food["nome"]
             food_id = food["id"]
+            valori = nutri.scala(nutri.per_100g(food), grams)
         else:
             try:
                 carbs = float(str(it.get("carbo_g")).replace(",", "."))
@@ -284,10 +297,11 @@ def _clean_items(store: Store, items) -> list[dict]:
             if not desc:
                 raise DiaryError("Dai un nome alla voce libera.")
             food_id = None
+            valori = nutri.pulisci(it.get("nutrienti"))
         if carbs < 0:
             raise DiaryError("I carboidrati non possono essere negativi.")
         out.append({"food_id": food_id, "description": desc, "grams": grams,
-                    "carbs_g": round(carbs, 1)})
+                    "carbs_g": round(carbs, 1), "nutrienti": valori})
     return out
 
 
@@ -295,7 +309,7 @@ def _meal_dict(store: Store, row) -> dict:
     keys = row.keys()
     items = [{
         "id": r["id"], "alimento_id": r["food_id"], "descrizione": r["description"],
-        "grammi": r["grams"], "carbo_g": r["carbs_g"],
+        "grammi": r["grams"], "carbo_g": r["carbs_g"], "nutrienti": nutri.da_riga(r),
     } for r in store.db.execute("SELECT * FROM meal_item WHERE meal_id = ? ORDER BY id", (row["id"],))]
     analisi_raw = row["analysis_json"] if "analysis_json" in keys else None
     try:
@@ -305,6 +319,7 @@ def _meal_dict(store: Store, row) -> dict:
     return {"id": row["id"], "ora": row["ts_local"], "tipo": row["meal_type"],
             "note": row["notes"], "voci": items,
             "carbo_g": _round(sum(i["carbo_g"] for i in items)),
+            "nutrienti": nutri.somma(items),
             "foto": foto_mod.list_photos(store, row["id"]),
             "creato_da": row["created_from"] if "created_from" in keys else None,
             "analisi_foto": analisi}
@@ -319,6 +334,24 @@ def meals_between(store: Store, start: str, end: str) -> list[dict]:
     rows = store.db.execute("SELECT * FROM meal WHERE ts_local >= ? AND ts_local < ? ORDER BY ts_local",
                             (start, end))
     return [_meal_dict(store, r) for r in rows]
+
+
+def diet_summary(store: Store, day_from, day_to) -> dict:
+    """Nutrienti per giorno e media sul periodo (solo i giorni con almeno un pasto)."""
+    from datetime import timedelta
+    meals = meals_between(store, f"{day_from.isoformat()} 00:00:00",
+                          f"{(day_to + timedelta(days=1)).isoformat()} 00:00:00")
+    per_day: dict[str, list[dict]] = {}
+    for m in meals:
+        per_day.setdefault(m["ora"][:10], []).append(m["nutrienti"])
+    giorni = [{"giorno": d, "pasti": len(t), **nutri.somma_totali(t)} for d, t in sorted(per_day.items())]
+    media = None
+    if giorni:
+        media = {"carbo": round(sum(g["carbo"] for g in giorni) / len(giorni), 1)}
+        for k in nutri.NUTRIENTI:
+            noti = [g[k] for g in giorni if g[k] is not None]
+            media[k] = round(sum(noti) / len(noti), 1) if noti else None
+    return {"giorni": giorni, "media": media, "giorni_con_pasti": len(giorni)}
 
 
 def save_meal(store: Store, data: dict, meal_id: int | None = None) -> dict:
@@ -346,8 +379,10 @@ def save_meal(store: Store, data: dict, meal_id: int | None = None) -> dict:
             (ts, meal_type, notes, creato_da, analisi_json, meal_id))
         store.db.execute("DELETE FROM meal_item WHERE meal_id = ?", (meal_id,))
     store.db.executemany(
-        "INSERT INTO meal_item(meal_id, food_id, description, grams, carbs_g) VALUES (?, ?, ?, ?, ?)",
-        [(meal_id, i["food_id"], i["description"], i["grams"], i["carbs_g"]) for i in items])
+        "INSERT INTO meal_item(meal_id, food_id, description, grams, carbs_g, "
+        "kcal, protein_g, fat_g, sugars_g, fiber_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(meal_id, i["food_id"], i["description"], i["grams"], i["carbs_g"],
+          *(i["nutrienti"][k] for k in nutri.NUTRIENTI)) for i in items])
     store.db.commit()
     return get_meal(store, meal_id)
 
