@@ -24,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
         CamapsTirSensor(coordinator, entry, "tir_7g", "TIR 7 giorni", "tir_7g_pct"),
         CamapsCarboidratiOggiSensor(coordinator, entry),
         CamapsInsulinaOggiSensor(coordinator, entry),
+        *[CamapsNutrienteOggiSensor(coordinator, entry, *spec) for spec in NUTRIENTI_OGGI],
         CamapsUltimoPastoSensor(coordinator, entry),
         CamapsUltimoBoloSensor(coordinator, entry),
         CamapsInsightSettimanaleSensor(weekly, entry),
@@ -113,6 +114,48 @@ class CamapsInsulinaOggiSensor(_Base):
     def extra_state_attributes(self):
         d = self.coordinator.data or {}
         return {"bolo_u": d.get("insulina_oggi_boli_U"), "basale_u": d.get("insulina_oggi_basale_U")}
+
+
+# (chiave in nutrienti_oggi, nome, unita', icona)
+NUTRIENTI_OGGI = (
+    ("kcal", "Calorie oggi", "kcal", "mdi:fire"),
+    ("proteine", "Proteine oggi", "g", "mdi:food-drumstick"),
+    ("grassi", "Grassi oggi", "g", "mdi:water"),
+    ("zuccheri", "Zuccheri oggi", "g", "mdi:cube-outline"),
+    ("fibra", "Fibre oggi", "g", "mdi:grain"),
+)
+
+
+class CamapsNutrienteOggiSensor(_Base):
+    """Calorie e macronutrienti dei pasti di oggi. Stato 0 se oggi non c'e' nessun pasto;
+    sconosciuto se i pasti non hanno valori noti. L'attributo "parziale" avvisa quando
+    manca il dato di qualche alimento (il totale e' una stima per difetto)."""
+
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, entry, key: str, name: str, unit: str, icon: str) -> None:
+        super().__init__(coordinator, entry)
+        self._key = key
+        self._attr_name = name
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_unique_id = f"{entry.entry_id}_{key}_oggi"
+
+    @property
+    def _oggi(self) -> dict:
+        return (self.coordinator.data or {}).get("nutrienti_oggi") or {}
+
+    @property
+    def native_value(self):
+        return self._oggi.get(self._key)
+
+    @property
+    def extra_state_attributes(self):
+        o = self._oggi
+        attrs = {"parziale": o.get("parziale"), "pasti": o.get("pasti")}
+        if self._key == "kcal":
+            attrs["carboidrati_g"] = o.get("carbo")
+        return attrs
 
 
 class CamapsUltimoPastoSensor(_Base):

@@ -98,3 +98,47 @@ def _meal_for_photo(store):
     from camaps_diary import diary
     pasto = diary.save_meal(store, {"ora": "2026-10-15T08:00", "tipo": "colazione", "voci": []})
     return pasto["id"]
+
+
+class _FakeBlock:
+    type = "text"
+
+    def __init__(self, parsed):
+        self.parsed_output = parsed
+
+
+class _FakeClient:
+    def __init__(self, parsed):
+        self._parsed = parsed
+        self.messages = self
+
+    def parse(self, **kwargs):
+        class R:
+            content = [_FakeBlock(self._parsed)]
+        return R()
+
+
+def test_stima_nutrienti_corregge_zuccheri_e_calorie_incoerenti():
+    stima = foto._StimaNutrienti(voci=[
+        foto._VoceStima(indice=0, kcal=900, protein_g=10, fat_g=5, sugars_g=50, fiber_g=2)])
+    out = foto.stima_nutrienti_voci("k", "m", [{"descrizione": "pane", "grammi": 90, "carbo_g": 40}],
+                                    client=_FakeClient(stima))
+    assert out[0]["zuccheri"] == 40.0          # mai piu' dei carboidrati
+    assert out[0]["kcal"] == 4 * 40 + 4 * 10 + 9 * 5   # 900 incoerente coi macro: vale il calcolo
+
+
+def test_completa_nutrienti_ia_riempie_solo_voci_libere_vuote_e_le_marca(store):
+    from camaps_diary import diary
+    pasto = diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "pranzo", "voci": [
+        {"descrizione": "pane", "grammi": 90, "carbo_g": 40}]})
+    chiamate = []
+
+    def stimatore(voci):
+        chiamate.append(voci)
+        return [{"kcal": 250, "proteine": 8, "grassi": 2, "zuccheri": 3, "fibra": 4} for _ in voci]
+
+    assert diary.completa_nutrienti_ia(store, stimatore, "2026-10-15") == 1
+    v = diary.get_meal(store, pasto["id"])["voci"][0]
+    assert v["nutrienti"]["kcal"] == 250 and v["nutrienti_ia"] is True and v["carbo_g"] == 40.0
+    assert diary.completa_nutrienti_ia(store, stimatore, "2026-10-15") == 0  # nulla da rifare
+    assert len(chiamate) == 1

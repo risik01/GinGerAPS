@@ -477,10 +477,51 @@ function macroBarHtml(t) {
     <span class="m-carb" style="width:${sh.c.toFixed(1)}%"></span><span class="m-prot" style="width:${sh.p.toFixed(1)}%"></span><span class="m-fat" style="width:${sh.f.toFixed(1)}%"></span></div>`;
 }
 
+// Ciambella: quota di energia da carboidrati, proteine e grassi, con le kcal al centro.
+function donutSvg(t, size = 116) {
+  const sh = energyShares(t);
+  const r = 46;
+  const C = 2 * Math.PI * r;
+  const out = [`<svg class="donut" viewBox="0 0 120 120" width="${size}" height="${size}" role="img" aria-label="Ripartizione dell'energia tra carboidrati, proteine e grassi">`,
+    `<circle class="d-track" cx="60" cy="60" r="${r}"/>`];
+  if (sh) {
+    let off = 0;
+    for (const [cls, pct] of [['d-carb', sh.c], ['d-prot', sh.p], ['d-fat', sh.f]]) {
+      const len = (C * pct) / 100;
+      out.push(`<circle class="${cls}" cx="60" cy="60" r="${r}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"/>`);
+      off += len;
+    }
+  }
+  out.push(`<text class="d-num" x="60" y="62">${t.kcal != null ? n0(t.kcal) : '–'}</text><text class="d-unit" x="60" y="78">kcal</text></svg>`);
+  return out.join('');
+}
+
+// Barra impilata: energia da carboidrati/proteine/grassi; `widthPct` = lunghezza rispetto alla piu' lunga.
+function stackHtml(n, carbo, kcalRef, widthPct) {
+  const parts = n.proteine != null && n.grassi != null
+    ? [['s-carb', (carbo || 0) * 4], ['s-prot', n.proteine * 4], ['s-fat', n.grassi * 9]]
+    : (n.kcal != null ? [['s-kcal', n.kcal]] : []);
+  const tot = parts.reduce((s, [, v]) => s + v, 0);
+  if (!tot || !kcalRef) return '';
+  return `<span class="stack" style="width:${Math.max(4, widthPct).toFixed(1)}%">${parts.map(([cls, v]) =>
+    `<span class="${cls}" style="width:${((v / tot) * 100).toFixed(1)}%"></span>`).join('')}</span>`;
+}
+
 function partialNote(t) {
   const n = Math.max(0, ...['kcal', 'proteine', 'grassi'].map((k) => (t.senza_dato && t.senza_dato[k]) || 0));
   if (!n) return '';
   return `<p class="diet-partial">Per ${n} ${n === 1 ? 'alimento' : 'alimenti'} su ${t.voci} mancano alcuni valori nutrizionali: i totali sono parziali.</p>`;
+}
+
+// Confronto tra i pasti del giorno: lunghezza = calorie, colori = da dove arrivano.
+function mealBarsHtml(meals) {
+  const rows = meals.filter((m) => m.nutrienti.kcal != null);
+  if (rows.length < 2) return '';
+  const max = Math.max(...rows.map((m) => m.nutrienti.kcal));
+  return `<p class="diet-sub">Calorie per pasto</p><div class="meal-bars">${rows.map((m) => `
+    <div class="meal-bar-row"><span class="mb-label">${MEAL_LABELS[m.tipo] || esc(m.tipo)}</span>
+      ${stackHtml(m.nutrienti, m.nutrienti.carbo, max, (m.nutrienti.kcal / max) * 100)}
+      <span class="mb-val">${n0(m.nutrienti.kcal)}</span></div>`).join('')}</div>`;
 }
 
 function renderDiet(p) {
@@ -494,9 +535,11 @@ function renderDiet(p) {
     .filter(Boolean).join(' · ');
   const mealsHtml = meals.map((m) => {
     const n = m.nutrienti;
+    const maxFood = Math.max(0, ...m.voci.map((v) => v.nutrienti.kcal || 0));
     const foods = m.voci.map((v) => `
       <li>${esc(v.descrizione)}${v.grammi ? ` · ${n0(v.grammi)} g` : ''}
-        <span class="diet-macros">${hasNutri(v.nutrienti) ? macroLine(v.nutrienti, v.carbo_g) : `carbo ${gr(v.carbo_g)} g · altri valori non disponibili`}</span></li>`).join('');
+        <span class="food-bar">${stackHtml(v.nutrienti, v.carbo_g, maxFood, maxFood ? ((v.nutrienti.kcal || 0) / maxFood) * 100 : 0)}</span>
+        <span class="diet-macros">${hasNutri(v.nutrienti) ? macroLine(v.nutrienti, v.carbo_g) + (v.nutrienti_ia ? ' · stima IA' : '') : `carbo ${gr(v.carbo_g)} g · altri valori non disponibili`}</span></li>`).join('');
     return `
       <div class="diet-meal">
         <div class="diet-meal-head"><span>${MEAL_LABELS[m.tipo] || esc(m.tipo)} · ${m.ora.slice(11, 16)}</span>
@@ -509,14 +552,17 @@ function renderDiet(p) {
   box.innerHTML = `
     <div class="diet-head"><h2>Alimentazione del giorno</h2>
       <span class="diet-kcal">${t.kcal != null ? n0(t.kcal) : '–'}<small>kcal</small></span></div>
-    ${macroBarHtml(t)}
-    <ul class="macro-legend">
-      <li><i class="dot-carb"></i>Carboidrati<b>${gr(t.carbo)}<small>g${pct(sh && sh.c)}</small></b></li>
-      <li><i class="dot-prot"></i>Proteine<b>${gr(t.proteine)}<small>g${pct(sh && sh.p)}</small></b></li>
-      <li><i class="dot-fat"></i>Grassi<b>${gr(t.grassi)}<small>g${pct(sh && sh.f)}</small></b></li>
-    </ul>
+    <div class="diet-overview">
+      ${donutSvg(t)}
+      <ul class="macro-legend">
+        <li><span><i class="dot-carb"></i>Carboidrati</span><b>${gr(t.carbo)}<small>g${pct(sh && sh.c)}</small></b></li>
+        <li><span><i class="dot-prot"></i>Proteine</span><b>${gr(t.proteine)}<small>g${pct(sh && sh.p)}</small></b></li>
+        <li><span><i class="dot-fat"></i>Grassi</span><b>${gr(t.grassi)}<small>g${pct(sh && sh.f)}</small></b></li>
+      </ul>
+    </div>
     ${extra ? `<p class="diet-extra">${extra}</p>` : ''}
     ${partialNote(t)}
+    ${mealBarsHtml(meals)}
     <details class="diet-detail" open><summary>Dettaglio per pasto e alimento</summary>${mealsHtml}</details>
     <p class="fineprint">Stime nutrizionali approssimative, non indicazioni di dose.</p>`;
 }
@@ -682,6 +728,7 @@ function openMealEditor(meal = null, preset = {}) {
       grammi: v.grammi,
       carbo_g: v.carbo_g,
       per100: v.grammi ? (v.carbo_g / v.grammi) * 100 : null,
+      ia: !!v.nutrienti_ia,
       ...nutriFromSaved(v),
     }))
     : [];
@@ -901,7 +948,7 @@ function renderItems() {
           <span class="iname">${esc(v.descrizione)}<small>${sub}</small>${(() => {
     const nn = itemNutri(v);
     return hasNutri(nn)
-      ? `<span class="imacro">${nn.kcal != null ? `<b>${n0(nn.kcal)} kcal</b> · ` : ''}${macroLine(nn, itemCarbs(v), false)}</span>`
+      ? `<span class="imacro">${nn.kcal != null ? `<b>${n0(nn.kcal)} kcal</b> · ` : ''}${macroLine(nn, itemCarbs(v), false)}${v.ia ? ' · <em>stima IA</em>' : ''}</span>`
       : '<span class="imacro">altri valori nutrizionali non disponibili</span>';
   })()}</span>
           <span class="stepper">
@@ -920,7 +967,40 @@ function renderItems() {
     }).join('');
   }
   updateTotal();
+  const mancano = editor.voci.some((v) => !v.alimento_id && !hasNutri(itemNutri(v)));
+  $('#meal-fill-ia').hidden = !(mancano && state.stato?.ia_foto?.disponibile);
   $('.dish-zone').hidden = !editor.voci.some((v) => v.per100 != null);
+}
+
+// Stima IA dei valori mancanti delle voci libere: i carboidrati restano quelli scritti, il risultato
+// entra nel pasto come stima (marcata) e si salva solo quando salvi il pasto.
+async function fillNutrientsWithAi() {
+  const idx = editor.voci.map((v, i) => i).filter((i) => !editor.voci[i].alimento_id && !hasNutri(itemNutri(editor.voci[i])));
+  if (!idx.length) return;
+  const btn = $('#meal-fill-ia');
+  btn.disabled = true;
+  btn.textContent = 'Stima in corso…';
+  try {
+    const r = await api('api/nutrienti/stima', { method: 'POST', body: {
+      voci: idx.map((i) => ({ descrizione: editor.voci[i].descrizione, grammi: parseNum(editor.voci[i].grammi), carbo_g: itemCarbs(editor.voci[i]) })),
+    } });
+    let n = 0;
+    r.stime.forEach((st, k) => {
+      if (!st) return;
+      const v = editor.voci[idx[k]];
+      const g = parseNum(v.grammi);
+      if (g) { v.nutri100 = Object.fromEntries(NUTRI_KEYS.map((key) => [key, (st[key] / g) * 100])); delete v.nutriAbs; } else { v.nutriAbs = st; }
+      v.ia = true;
+      n += 1;
+    });
+    renderItems();
+    toast(n ? `Valori stimati per ${n} ${n === 1 ? 'voce' : 'voci'}: controllali e salva il pasto` : 'Nessuna stima ricevuta');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Completa i valori mancanti con l\'IA';
+  }
 }
 
 function defaultGrams(food) {
@@ -1134,6 +1214,7 @@ function mealBody() {
     ? { alimento_id: v.alimento_id, grammi: parseNum(v.grammi), descrizione: v.descrizione }
     : {
       descrizione: v.descrizione, grammi: parseNum(v.grammi), carbo_g: Math.round(itemCarbs(v) * 10) / 10,
+      nutrienti_ia: !!v.ia,
       nutrienti: Object.fromEntries(Object.entries(itemNutri(v)).map(([k, x]) => [k, x == null ? null : Math.round(x * 10) / 10])),
     }));
   const body = { ora: $('#meal-time').value, tipo: editor.tipo, note: $('#meal-notes').value, voci };
@@ -1306,6 +1387,7 @@ function confirmAnalysis(photoId) {
       descrizione: it.name_it,
       grammi: n0(grams),
       per100: grams ? (it.carbs_g / grams) * 100 : 0,
+      ia: it.kcal != null,
       nutri100: Object.fromEntries(Object.entries({
         kcal: it.kcal, proteine: it.protein_g, grassi: it.fat_g, zuccheri: it.sugars_g, fibra: it.fiber_g,
       }).map(([k, x]) => [k, x == null || !grams ? null : (x / grams) * 100])),
@@ -2490,6 +2572,7 @@ function bind() {
     toggleAiItem(photoId, idx);
   });
   $('#meal-dish').addEventListener('click', openDishForm);
+  $('#meal-fill-ia').addEventListener('click', fillNutrientsWithAi);
   $('#meal-off').addEventListener('click', () => offSearchInto($('#meal-search').value, $('#meal-off-results'), mealOffResults));
   $('#meal-off-results').addEventListener('click', async (ev) => {
     const li = ev.target.closest('[data-idx]');

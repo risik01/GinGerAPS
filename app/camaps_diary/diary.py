@@ -289,6 +289,7 @@ def _clean_items(store: Store, items) -> list[dict]:
             desc = desc or food["nome"]
             food_id = food["id"]
             valori = nutri.scala(nutri.per_100g(food), grams)
+            ia = 0
         else:
             try:
                 carbs = float(str(it.get("carbo_g")).replace(",", "."))
@@ -298,10 +299,11 @@ def _clean_items(store: Store, items) -> list[dict]:
                 raise DiaryError("Dai un nome alla voce libera.")
             food_id = None
             valori = nutri.pulisci(it.get("nutrienti"))
+        ia = 0 if food_id else int(bool(it.get("nutrienti_ia")) and any(x is not None for x in valori.values()))
         if carbs < 0:
             raise DiaryError("I carboidrati non possono essere negativi.")
         out.append({"food_id": food_id, "description": desc, "grams": grams,
-                    "carbs_g": round(carbs, 1), "nutrienti": valori})
+                    "carbs_g": round(carbs, 1), "nutrienti": valori, "nutri_ia": ia})
     return out
 
 
@@ -310,6 +312,7 @@ def _meal_dict(store: Store, row) -> dict:
     items = [{
         "id": r["id"], "alimento_id": r["food_id"], "descrizione": r["description"],
         "grammi": r["grams"], "carbo_g": r["carbs_g"], "nutrienti": nutri.da_riga(r),
+        "nutrienti_ia": bool(r["nutri_ia"]),
     } for r in store.db.execute("SELECT * FROM meal_item WHERE meal_id = ? ORDER BY id", (row["id"],))]
     analisi_raw = row["analysis_json"] if "analysis_json" in keys else None
     try:
@@ -354,6 +357,108 @@ def diet_summary(store: Store, day_from, day_to) -> dict:
     return {"giorni": giorni, "media": media, "giorni_con_pasti": len(giorni)}
 
 
+_FOOD_MACRO_COLS = ("kcal_per_100g", "protein_per_100g", "fat_per_100g", "sugars_per_100g", "fiber_per_100g")
+
+
+def ricalcola_nutrienti(store: Store, off=None, da_giorno: str | None = None) -> dict:
+    """Completa e ricalcola i valori nutrizionali dei pasti gia' salvati.
+
+    1. Alimenti con codice a barre ma senza nessun valore: li cerca su Open Food Facts
+       (se `off` e' disponibile) e riempie solo le colonne ancora vuote.
+    2. Voci dei pasti collegate a un alimento: dal giorno `da_giorno` in poi vengono
+       ricalcolate sempre dai valori correnti dell'alimento; prima di quel giorno solo
+       se la voce non ha alcun valore (cosi' non si sovrascrive nulla di gia' corretto).
+    Le voci libere (senza alimento) non si toccano: i loro valori sono quelli indicati a mano o dall'IA.
+    Restituisce un riepilogo con i nomi degli alimenti che restano senza dati.
+    """
+    completati = 0
+    if off is not None:
+        rows = store.db.execute(
+            "SELECT id, barcode FROM food WHERE barcode IS NOT NULL AND "
+            + " AND ".join(f"{c} IS NULL" for c in _FOOD_MACRO_COLS)).fetchall()
+        for r in rows:
+            try:
+                prod = off.barcode(r["barcode"])
+            except Exception:  # noqa: BLE001 - rete assente o limite OFF: si riprova al prossimo ricalcolo
+                continue
+            if not prod:
+                continue
+            store.db.execute(
+                "UPDATE food SET kcal_per_100g = ?, protein_per_100g = ?, fat_per_100g = ?, "
+                "sugars_per_100g = ?, fiber_per_100g = ? WHERE id = ?",
+                (prod.get("kcal_100g"), prod.get("proteine_100g"), prod.get("grassi_100g"),
+                 prod.get("zuccheri_100g"), prod.get("fibra_100g"), r["id"]))
+            if any(prod.get(k) is not None for k in ("kcal_100g", "proteine_100g", "grassi_100g")):
+                completati += 1
+        store.db.commit()
+
+    voci = store.db.execute(
+        "SELECT mi.id, mi.grams, mi.food_id, m.ts_local, "
+        "(mi.kcal IS NULL AND mi.protein_g IS NULL AND mi.fat_g IS NULL "
+        " AND mi.sugars_g IS NULL AND mi.fiber_g IS NULL) AS vuota "
+        "FROM meal_item mi JOIN meal m ON m.id = mi.meal_id "
+        "WHERE mi.food_id IS NOT NULL AND mi.grams > 0").fetchall()
+    aggiornate = 0
+    for v in voci:
+        if not v["vuota"] and not (da_giorno and v["ts_local"][:10] >= da_giorno):
+            continue
+        food = get_food(store, v["food_id"])
+        if not food:
+            continue
+        valori = nutri.scala(nutri.per_100g(food), v["grams"])
+        store.db.execute(
+            "UPDATE meal_item SET kcal = ?, protein_g = ?, fat_g = ?, sugars_g = ?, fiber_g = ? WHERE id = ?",
+            (*(valori[k] for k in nutri.NUTRIENTI), v["id"]))
+        aggiornate += 1
+    store.db.commit()
+
+    mancanti = [r["name"] for r in store.db.execute(
+        "SELECT DISTINCT f.name FROM food f JOIN meal_item mi ON mi.food_id = f.id "
+        "WHERE " + " AND ".join(f"f.{c} IS NULL" for c in _FOOD_MACRO_COLS) + " ORDER BY f.name")]
+    return {"alimenti_completati": completati, "voci_aggiornate": aggiornate,
+            "alimenti_senza_dati": mancanti}
+
+
+def completa_nutrienti_ia(store: Store, stimatore, da_giorno: str) -> int:
+    """Riempie con una stima IA le voci libere (senza alimento) che non hanno nessun valore
+    nutrizionale, nei pasti dal giorno indicato. I carboidrati restano quelli gia' confermati;
+    le voci riempite sono marcate come stima IA. `stimatore(voci) -> lista di dict|None`."""
+    righe = store.db.execute(
+        "SELECT mi.id, mi.description, mi.grams, mi.carbs_g FROM meal_item mi JOIN meal m ON m.id = mi.meal_id "
+        "WHERE mi.food_id IS NULL AND m.ts_local >= ? AND mi.kcal IS NULL AND mi.protein_g IS NULL "
+        "AND mi.fat_g IS NULL AND mi.sugars_g IS NULL AND mi.fiber_g IS NULL ORDER BY mi.id",
+        (f"{da_giorno} 00:00:00",)).fetchall()
+    fatte = 0
+    for i in range(0, len(righe), 15):
+        gruppo = righe[i:i + 15]
+        stime = stimatore([{"descrizione": r["description"], "grammi": r["grams"], "carbo_g": r["carbs_g"]}
+                           for r in gruppo])
+        for r, st in zip(gruppo, stime):
+            if not st:
+                continue
+            store.db.execute(
+                "UPDATE meal_item SET kcal = ?, protein_g = ?, fat_g = ?, sugars_g = ?, fiber_g = ?, nutri_ia = 1 "
+                "WHERE id = ?", (*(st[k] for k in nutri.NUTRIENTI), r["id"]))
+            fatte += 1
+        store.db.commit()
+    return fatte
+
+
+def diagnosi_nutrienti(store: Store, da_giorno: str) -> list[str]:
+    """Una riga per voce dei pasti dal giorno indicato: dice cosa ha e cosa manca (per i log)."""
+    righe = []
+    for m in store.db.execute("SELECT * FROM meal WHERE ts_local >= ? ORDER BY ts_local", (da_giorno,)):
+        foto = store.db.execute("SELECT COUNT(*) FROM meal_photo WHERE meal_id = ?", (m["id"],)).fetchone()[0]
+        voci = store.db.execute("SELECT * FROM meal_item WHERE meal_id = ? ORDER BY id", (m["id"],)).fetchall()
+        righe.append(f"pasto {m['id']} {m['ts_local'][:16]} {m['meal_type']} ({m['created_from']}), "
+                     f"{len(voci)} voci, {foto} foto")
+        for v in voci:
+            noti = [k for k, (col, _) in nutri.NUTRIENTI.items() if v[col] is not None]
+            righe.append(f"   - {v['description']!r} {v['grams']} g, {v['carbs_g']} g carbo, "
+                         f"alimento={'si' if v['food_id'] else 'no'}, valori={','.join(noti) or 'nessuno'}")
+    return righe
+
+
 def save_meal(store: Store, data: dict, meal_id: int | None = None) -> dict:
     ts = _parse_ts(data.get("ora"))
     meal_type = data.get("tipo")
@@ -380,9 +485,9 @@ def save_meal(store: Store, data: dict, meal_id: int | None = None) -> dict:
         store.db.execute("DELETE FROM meal_item WHERE meal_id = ?", (meal_id,))
     store.db.executemany(
         "INSERT INTO meal_item(meal_id, food_id, description, grams, carbs_g, "
-        "kcal, protein_g, fat_g, sugars_g, fiber_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "kcal, protein_g, fat_g, sugars_g, fiber_g, nutri_ia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [(meal_id, i["food_id"], i["description"], i["grams"], i["carbs_g"],
-          *(i["nutrienti"][k] for k in nutri.NUTRIENTI)) for i in items])
+          *(i["nutrienti"][k] for k in nutri.NUTRIENTI), i["nutri_ia"]) for i in items])
     store.db.commit()
     return get_meal(store, meal_id)
 

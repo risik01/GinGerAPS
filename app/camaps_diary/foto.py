@@ -264,3 +264,79 @@ def analyze(store: Store, photos_dir: Path, photo_id: int, api_key: str, model: 
         raise
     _registra_costo(store, model, usage)
     return _set_analysis(store, photo_id, "ok", stima.model_dump(), None)
+
+
+# -- Stima dei nutrienti da descrizione + grammi (senza foto) -------------------
+
+class _VoceStima(BaseModel):
+    indice: int
+    kcal: float = Field(ge=0)
+    protein_g: float = Field(ge=0)
+    fat_g: float = Field(ge=0)
+    sugars_g: float = Field(ge=0)
+    fiber_g: float = Field(ge=0)
+
+
+class _StimaNutrienti(BaseModel):
+    voci: list[_VoceStima]
+
+
+SYSTEM_PROMPT_NUTRIENTI = (
+    "Sei un assistente di nutrizione per una persona in Italia. Ricevi un elenco di alimenti gia' mangiati, "
+    "ciascuno con grammi e carboidrati totali GIA' CONFERMATI dalla persona. Per ogni voce stima calorie, "
+    "proteine, grassi totali, zuccheri semplici e fibre della porzione indicata, con valori medi delle tabelle "
+    "nutrizionali italiane e coerenti con i carboidrati dati: non cambiarli. Gli zuccheri sono compresi nei "
+    "carboidrati. Le calorie devono essere coerenti con i macronutrienti (circa 4 kcal/g carboidrati e proteine, "
+    "9 kcal/g grassi). Restituisci una riga per ogni voce, con lo stesso indice ricevuto. "
+    "Non dare MAI consigli su insulina, dosi o terapia."
+)
+
+
+def _correggi_stima(v: "_VoceStima", carbo_g: float) -> dict:
+    """Controlli di buon senso sulla stima: zuccheri <= carboidrati; calorie vicine a 4C+4P+9F."""
+    zuccheri = min(v.sugars_g, carbo_g)
+    atwater = 4 * carbo_g + 4 * v.protein_g + 9 * v.fat_g
+    kcal = v.kcal
+    if atwater > 0 and abs(kcal - atwater) / atwater > 0.3:
+        kcal = atwater  # una stima incoerente con i macro non e' attendibile: vale il calcolo dai macro
+    return {"kcal": round(kcal, 1), "proteine": round(v.protein_g, 1), "grassi": round(v.fat_g, 1),
+            "zuccheri": round(zuccheri, 1), "fibra": round(v.fiber_g, 1)}
+
+
+def stima_nutrienti_voci(api_key: str, model: str, voci: list[dict],
+                         client: "anthropic.Anthropic | None" = None) -> list[dict | None]:
+    """Stima calorie/proteine/grassi/zuccheri/fibre per voci [{descrizione, grammi, carbo_g}].
+
+    Restituisce una lista allineata a `voci` (None dove il modello non ha risposto). Non tocca i
+    carboidrati. E' una stima: chi chiama deve segnalarla come tale e farla confermare."""
+    if not api_key:
+        raise VisionError("Aggiungi la chiave API Anthropic nella configurazione dell'add-on per usare questa funzione.")
+    if not voci:
+        return []
+    client = client or anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT_S)
+    elenco = [{"indice": i, "alimento": v["descrizione"], "grammi": v.get("grammi"),
+               "carboidrati_g": v["carbo_g"]} for i, v in enumerate(voci)]
+    try:
+        resp = client.messages.parse(
+            model=model or DEFAULT_MODEL, max_tokens=2000, system=SYSTEM_PROMPT_NUTRIENTI,
+            messages=[{"role": "user", "content": "Alimenti:\n" + json.dumps(elenco, ensure_ascii=False)}],
+            output_format=_StimaNutrienti)
+    except anthropic.AuthenticationError as exc:
+        raise VisionError("Chiave API Anthropic non valida: controllala nella configurazione dell'add-on.") from exc
+    except anthropic.RateLimitError as exc:
+        raise VisionError("Limite di richieste Anthropic raggiunto: riprova tra poco.") from exc
+    except (anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
+        raise VisionError(f"Impossibile contattare Claude: {exc}") from exc
+    except anthropic.APIStatusError as exc:
+        raise VisionError(f"Errore da Claude ({exc.status_code}): {str(exc)[:200]}") from exc
+    parsed = None
+    for block in resp.content:
+        if getattr(block, "type", None) == "text" and getattr(block, "parsed_output", None) is not None:
+            parsed = block.parsed_output
+    if parsed is None:
+        raise VisionError("Risposta inattesa da Claude: nessuna stima nel risultato.")
+    out: list[dict | None] = [None] * len(voci)
+    for r in parsed.voci:
+        if 0 <= r.indice < len(voci) and out[r.indice] is None:
+            out[r.indice] = _correggi_stima(r, float(voci[r.indice]["carbo_g"]))
+    return out

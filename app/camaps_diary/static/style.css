@@ -977,7 +977,7 @@ svg { display: block; }
 /* -- Alimentazione: calorie e macronutrienti ------------------------------ */
 .diet-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm); padding: 14px 16px 12px; margin: 0 0 14px;
+  box-shadow: var(--shadow-sm); padding: 14px 16px 12px; margin: 14px 0 14px;
 }
 .diet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .diet-head h2 { font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 17px; margin: 0; }
@@ -1034,3 +1034,34 @@ svg { display: block; }
 .diet-chart .b-carb { fill: var(--carb); }
 .diet-chart .b-prot { fill: var(--prot); }
 .diet-chart .b-fat { fill: var(--fat); }
+
+/* grafici: ciambella del giorno, barre per pasto, barrette per alimento */
+.diet-overview { display: flex; align-items: center; gap: 14px; margin: 8px 0 4px; }
+.donut { flex: 0 0 auto; }
+.donut circle { fill: none; stroke-width: 14; }
+.donut .d-track { stroke: var(--line); }
+.donut .d-carb { stroke: var(--carb); }
+.donut .d-prot { stroke: var(--prot); }
+.donut .d-fat { stroke: var(--fat); }
+.donut text { fill: var(--ink); font-family: "Space Grotesk", sans-serif; text-anchor: middle; }
+.donut .d-num { font-size: 24px; font-weight: 700; }
+.donut .d-unit { font-size: 11px; fill: var(--muted); }
+.diet-overview .macro-legend { grid-template-columns: 1fr; flex: 1; min-width: 0; gap: 6px; }
+.diet-overview .macro-legend li { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.diet-overview .macro-legend b { display: inline; font-size: 17px; }
+.diet-sub { font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 14px; margin: 12px 0 4px; }
+.meal-bars { display: grid; gap: 7px; }
+.meal-bar-row { display: grid; grid-template-columns: 84px 1fr 58px; align-items: center; gap: 8px; font-size: 13px; }
+.meal-bar-row .mb-label { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meal-bar-row .mb-val { text-align: right; font-weight: 700; color: var(--kcal); font-variant-numeric: tabular-nums; }
+.stack { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: transparent; }
+.stack span { display: block; min-width: 2px; }
+.stack .s-carb { background: var(--carb); }
+.stack .s-prot { background: var(--prot); }
+.stack .s-fat { background: var(--fat); }
+.stack .s-kcal { background: var(--kcal); opacity: 0.55; }
+.food-bar { display: block; margin-top: 3px; }
+.food-bar .stack { height: 6px; border-radius: 3px; }
+
+.imacro em { font-style: normal; color: var(--accent); font-weight: 700; }
+#meal-fill-ia { margin: -4px 0 12px; }

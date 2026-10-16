@@ -107,3 +107,17 @@ def test_ha_snapshot_tir_7g_esclude_giorni_poco_coperti(store):
     _insert_glucose(store, rows)
     s = analysis.ha_snapshot(store, oggi)
     assert s["tir_7g_pct"] == 100.0
+
+
+def test_ha_snapshot_nutrienti_oggi(store):
+    from datetime import date
+    from camaps_diary import diary
+    oggi = date(2026, 10, 16)
+    assert analysis.ha_snapshot(store, oggi)["nutrienti_oggi"]["kcal"] == 0.0  # nessun pasto
+    pasta = diary.create_food(store, {"nome": "Pasta", "carbo_100g": 75, "kcal_100g": 350,
+                                      "proteine_100g": 12, "grassi_100g": 1.5})
+    diary.save_meal(store, {"ora": "2026-10-16T13:00", "tipo": "pranzo",
+                            "voci": [{"alimento_id": pasta["id"], "grammi": 100}]})
+    n = analysis.ha_snapshot(store, oggi)["nutrienti_oggi"]
+    assert n["kcal"] == 350.0 and n["proteine"] == 12.0 and n["parziale"] is False
+    assert n["zuccheri"] is None  # sconosciuto, non zero

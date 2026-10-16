@@ -160,6 +160,7 @@ MIGRATIONS = (
     ("meal_item", "fat_g", "REAL"),
     ("meal_item", "sugars_g", "REAL"),
     ("meal_item", "fiber_g", "REAL"),
+    ("meal_item", "nutri_ia", "INTEGER DEFAULT 0"),
     ("recipe_item", "kcal", "REAL"),
     ("recipe_item", "protein_g", "REAL"),
     ("recipe_item", "fat_g", "REAL"),

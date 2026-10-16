@@ -1,5 +1,5 @@
 name: Diario CamAPS
-version: "0.4.0"
+version: "0.4.3"
 slug: camaps_diary
 description: Glicemie, boli e insulina automatica di CamAPS FX (via Glooko), diario dei pasti con i tuoi alimenti
 arch:

@@ -31,7 +31,8 @@ Non sostituisce il parere del tuo diabetologo.
 - **Impostazioni**: scelta della sorgente dati (Glooko, Nightscout, xDrip+)
   con test di connessione, database alimenti personale.
 - **Integrazione Home Assistant** (`custom_components/camaps_diary`): sensori
-  (glicemia, TIR, carboidrati, insulina, ultimo pasto/bolo) e servizi
+  (glicemia, TIR, carboidrati, insulina, calorie/proteine/grassi/zuccheri/fibre
+  di oggi, ultimo pasto/bolo) e servizi
   (`add_meal`, `add_note`, `refresh`, `generate_report`) per automazioni; 4
   blueprint pronte (bolo senza pasto registrato, ipoglicemia notturna,
   riepilogo settimanale, promemoria cambio set).

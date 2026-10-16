@@ -29,7 +29,8 @@ from .analysis import (agp_profile, calendar_month, day_payload, food_occurrence
                        period_summary, steps_summary)
 from .diary import (MEAL_TYPES, NOTE_KINDS, DiaryError, create_food, create_note, delete_food,
                     delete_meal, delete_note, diet_summary, food_by_barcode, frequent_foods, get_food, get_meal,
-                    notes_for_day, save_meal, save_recipe, search_diary, search_foods, update_food)
+                    completa_nutrienti_ia, diagnosi_nutrienti, notes_for_day, ricalcola_nutrienti, save_meal, save_recipe, search_diary,
+                    search_foods, update_food)
 from .foto import VisionError
 from .datasource import DataSourceError
 from .glooko import GlookoClient, GlookoError
@@ -547,6 +548,30 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
             abort(400, "Periodo non valido.")
         return jsonify(steps_summary(g.store, day_from, day_to))
 
+    @app.post("/api/nutrienti/ricalcola")
+    def nutrienti_ricalcola():
+        """Completa i valori nutrizionali dei pasti gia' salvati (vedi diary.ricalcola_nutrienti)."""
+        da = request.args.get("da") or (today() - timedelta(days=1)).isoformat()
+        return jsonify(ricalcola_nutrienti(g.store, off, da))
+
+    @app.post("/api/nutrienti/stima")
+    def nutrienti_stima():
+        """Stima IA dei valori nutrizionali di voci gia' scritte (descrizione, grammi, carboidrati).
+        Non salva nulla: il risultato e' una bozza che l'editor del pasto fa confermare."""
+        body = request.get_json(force=True) or {}
+        voci = []
+        for v in (body.get("voci") or [])[:20]:
+            try:
+                voci.append({"descrizione": str(v["descrizione"])[:120], "grammi": v.get("grammi"),
+                             "carbo_g": float(v["carbo_g"])})
+            except (KeyError, TypeError, ValueError):
+                abort(400, "Ogni voce richiede descrizione e carboidrati.")
+        try:
+            stime = foto.stima_nutrienti_voci(opts.get("anthropic_api_key", ""), opts.get("ia_modello", ""), voci)
+        except VisionError as exc:
+            return jsonify(errore=str(exc)), 502
+        return jsonify(stime=stime)
+
     @app.get("/api/dieta")
     def dieta_periodo():
         day_to = _day(request.args.get("a"), today())
@@ -772,6 +797,48 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
     return app
 
 
+def _ricalcolo_iniziale(db_path, ciq, off_client, opts) -> None:
+    """Una volta sola dopo l'arrivo dei nutrienti (v0.4.x): completa i pasti gia' salvati,
+    ricalcolando ieri e oggi. Aspetta la fine dell'eventuale import Ciqual, che puo'
+    portare i valori mancanti degli alimenti."""
+    import time
+    store = Store(db_path)
+    try:
+        if store.get("nutrienti_ricalcolo_v4"):
+            return
+        for _ in range(60):
+            if not ciq.busy:
+                break
+            time.sleep(5)
+        oggi = now_local(store.get("timezone", DEFAULT_TZ)).date()
+        rep = ricalcola_nutrienti(store, off_client, (oggi - timedelta(days=1)).isoformat())
+        ia_ok = True
+        log.info("Ricalcolo nutrienti: %d alimenti completati da Open Food Facts, %d voci aggiornate",
+                 rep["alimenti_completati"], rep["voci_aggiornate"])
+        da = (oggi - timedelta(days=1)).isoformat()
+        if opts.get("anthropic_api_key"):
+            # I pasti nati da foto prima di v0.4 hanno solo i carboidrati: stima IA delle altre voci
+            # (carboidrati invariati), marcata come tale nell'interfaccia.
+            try:
+                n = completa_nutrienti_ia(
+                    store, lambda voci: foto.stima_nutrienti_voci(
+                        opts["anthropic_api_key"], opts.get("ia_modello", ""), voci), da)
+                log.info("Stima IA dei nutrienti mancanti: %d voci completate", n)
+            except Exception as exc:  # noqa: BLE001
+                ia_ok = False  # niente flag: al prossimo avvio riprova
+                log.warning("Stima IA dei nutrienti non riuscita: %s", exc)
+        if ia_ok:
+            store.set("nutrienti_ricalcolo_v4", "1")
+        for riga in diagnosi_nutrienti(store, da):
+            log.info("Diagnosi nutrienti: %s", riga)
+        if rep["alimenti_senza_dati"]:
+            log.info("Alimenti ancora senza valori nutrizionali: %s", ", ".join(rep["alimenti_senza_dati"]))
+    except Exception:  # noqa: BLE001
+        log.exception("Ricalcolo nutrienti non riuscito")
+    finally:
+        store.close()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -796,7 +863,10 @@ def main() -> None:
     if not os.environ.get("DIARIO_SENZA_CIQUAL"):
         ciq.start()
     off_imp = OffImporter(db_path, opts.get("off_contatto", ""))
-    app = create_app(db_path, syncer, OpenFoodFacts(opts.get("off_contatto", "")), restrict, ciq, opts, off_imp)
+    off_client = OpenFoodFacts(opts.get("off_contatto", ""))
+    threading.Thread(target=_ricalcolo_iniziale, args=(db_path, ciq, off_client, opts), daemon=True,
+                     name="nutrienti").start()
+    app = create_app(db_path, syncer, off_client, restrict, ciq, opts, off_imp)
     port = int(os.environ.get("PORT", "8099"))
     log.info("Diario CamAPS %s in ascolto sulla porta %d", __version__, port)
     from waitress import serve

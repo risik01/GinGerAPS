@@ -16,7 +16,7 @@ from datetime import date, datetime, time, timedelta
 
 from .camaps_entries import GlucoseIndex, classify
 from . import nutrienti as nutri
-from .diary import meals_between, notes_for_day
+from .diary import diet_summary, meals_between, notes_for_day
 from .stats import daily_summary
 from .store import Store
 from .timeutil import DEFAULT_TZ, fmt_local, now_local, parse_local
@@ -470,6 +470,19 @@ def _last_bolus(store: Store) -> dict | None:
     return {"ts_local": row["ts_local"], "unita_U": round(row["insulin_delivered"] or 0, 2)}
 
 
+def _nutrienti_oggi(store: Store, oggi: date) -> dict:
+    """Totali di oggi per i sensori di Home Assistant. Nessun pasto registrato = 0 (nulla
+    di mangiato da contare); pasti senza valori noti = None (sconosciuto, non zero)."""
+    giorni = diet_summary(store, oggi, oggi)["giorni"]
+    if not giorni:
+        return {"pasti": 0, "carbo": 0.0, "kcal": 0.0, "proteine": 0.0, "grassi": 0.0,
+                "zuccheri": 0.0, "fibra": 0.0, "parziale": False}
+    d = giorni[0]
+    parziale = any(d["senza_dato"][k] > 0 for k in ("kcal", "proteine", "grassi"))
+    return {"pasti": d["pasti"], "carbo": d["carbo"], "kcal": d["kcal"], "proteine": d["proteine"],
+            "grassi": d["grassi"], "zuccheri": d["zuccheri"], "fibra": d["fibra"], "parziale": parziale}
+
+
 def ha_snapshot(store: Store, oggi: date) -> dict:
     ultima = store.db.execute(
         "SELECT ts_local, mgdl FROM glucose ORDER BY ts_local DESC LIMIT 1").fetchone()
@@ -494,6 +507,7 @@ def ha_snapshot(store: Store, oggi: date) -> dict:
         "insulina_oggi_U": oggi_riga.get("totale_U"),
         "insulina_oggi_boli_U": oggi_riga.get("boli_U"),
         "insulina_oggi_basale_U": oggi_riga.get("basale_U"),
+        "nutrienti_oggi": _nutrienti_oggi(store, oggi),
         "ultimo_pasto": _last_meal(store),
         "ultimo_bolo": _last_bolus(store),
         "collegamento": {

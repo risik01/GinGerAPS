@@ -238,3 +238,23 @@ class TestNutrienti:
         store.set("nutrienti_backfill_v1", "")
         store._backfill_nutrienti()
         assert diary.get_meal(store, pasto["id"])["voci"][0]["nutrienti"]["kcal"] == 350.0
+
+    def test_ricalcolo_completa_voci_vuote_e_ricalcola_i_giorni_recenti(self, store):
+        pasta = self._pasta(store)
+        for giorno in ("2026-10-10", "2026-10-15"):
+            diary.save_meal(store, {"ora": f"{giorno}T13:00", "tipo": "pranzo",
+                                    "voci": [{"alimento_id": pasta["id"], "grammi": 100}]})
+        # voci salvate "all'antica": senza valori; sul vecchio di 10/10 uno modificato a mano
+        store.db.execute("UPDATE meal_item SET kcal = NULL, protein_g = NULL, fat_g = NULL, "
+                         "sugars_g = NULL, fiber_g = NULL")
+        store.db.execute("UPDATE meal_item SET kcal = 1 WHERE meal_id = 1")  # non vuota, vecchia: resta com'e'
+        rep = diary.ricalcola_nutrienti(store, None, "2026-10-15")
+        assert rep["voci_aggiornate"] == 1
+        assert diary.get_meal(store, 1)["voci"][0]["nutrienti"]["kcal"] == 1.0
+        assert diary.get_meal(store, 2)["voci"][0]["nutrienti"]["kcal"] == 350.0
+
+    def test_ricalcolo_elenca_alimenti_senza_dati(self, store):
+        senza = diary.create_food(store, {"nome": "Senza dati", "carbo_100g": 10})
+        diary.save_meal(store, {"ora": "2026-10-15T13:00", "tipo": "pranzo",
+                                "voci": [{"alimento_id": senza["id"], "grammi": 50}]})
+        assert diary.ricalcola_nutrienti(store)["alimenti_senza_dati"] == ["Senza dati"]
