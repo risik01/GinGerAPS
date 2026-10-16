@@ -804,7 +804,7 @@ def _ricalcolo_iniziale(db_path, ciq, off_client, opts) -> None:
     import time
     store = Store(db_path)
     try:
-        if store.get("nutrienti_ricalcolo_v4"):
+        if store.get("nutrienti_ricalcolo_v5"):
             return
         for _ in range(60):
             if not ciq.busy:
@@ -822,13 +822,13 @@ def _ricalcolo_iniziale(db_path, ciq, off_client, opts) -> None:
             try:
                 n = completa_nutrienti_ia(
                     store, lambda voci: foto.stima_nutrienti_voci(
-                        opts["anthropic_api_key"], opts.get("ia_modello", ""), voci), da)
+                        opts["anthropic_api_key"], opts.get("ia_modello", ""), voci), "2000-01-01")
                 log.info("Stima IA dei nutrienti mancanti: %d voci completate", n)
             except Exception as exc:  # noqa: BLE001
                 ia_ok = False  # niente flag: al prossimo avvio riprova
                 log.warning("Stima IA dei nutrienti non riuscita: %s", exc)
         if ia_ok:
-            store.set("nutrienti_ricalcolo_v4", "1")
+            store.set("nutrienti_ricalcolo_v5", "1")
         for riga in diagnosi_nutrienti(store, da):
             log.info("Diagnosi nutrienti: %s", riga)
         if rep["alimenti_senza_dati"]:
