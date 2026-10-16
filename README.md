@@ -57,6 +57,33 @@ integrazione → "Diario CamAPS". Le blueprint delle automazioni sono in
 `blueprints/automation/camaps_diary/`: copiale in `/config/blueprints/automation/`
 per trovarle in Impostazioni → Automazioni e scene → Blueprint.
 
+### Passi dallo smartwatch o dal telefono (opzionale)
+
+Il diario può mostrare i passi di oggi, letti dall'entità indicata nell'opzione
+`passi_entity_id` dell'add-on (predefinita: `sensor.passi_giornalieri`).
+Su iPhone, con un Xiaomi Smart Band o altri dispositivi che scrivono in Apple
+Salute, il modo più semplice è **HealthSync**:
+
+1. Installa l'integrazione [HealthSync](https://github.com/mannotfood/healthsync)
+   da HACS (oppure copia `custom_components/healthsync/` in
+   `/config/custom_components/`) e riavvia Home Assistant.
+2. Impostazioni → Dispositivi e servizi → Aggiungi integrazione → HealthSync.
+   Scegli un nome e, se Home Assistant è raggiungibile da internet, un
+   **segreto condiviso** (obbligatorio nell'app). La notifica mostra l'URL del
+   webhook; con Nabu Casa viene creato un cloudhook raggiungibile anche fuori
+   casa.
+3. Sull'iPhone installa
+   [HealthSync for Home Assistant](https://apps.apple.com/us/app/healthsync-for-home-assistant/id6794884113),
+   concedi i permessi di lettura a Salute, poi Impostazioni → Home Assistant:
+   incolla l'URL e il segreto e tocca **Test Connection**. La sincronizzazione
+   automatica in background richiede un acquisto una tantum.
+4. Crea un sensore modello (Impostazioni → Dispositivi e servizi → Aiutanti →
+   Modello → Sensore) chiamato **Passi giornalieri**, con unità `passi` e
+   classe di stato `total_increasing`, e stato:
+   `{{ states('sensor.healthsync_NOME_steps_today') | int(0) }}`
+   (sostituisci `NOME` con il nome scelto al punto 2). Questo sensore ha le
+   statistiche a lungo termine e sopravvive ai riavvii.
+
 ## Provare senza un vero account Glooko/Nightscout
 
 Imposta l'opzione `modalita_demo: true` nella configurazione dell'add-on:
@@ -95,6 +122,8 @@ Repositories, paste this repository's URL), install **Diario CamAPS**, fill
 in your data source credentials under Configuration, and start it. See
 [INSTALLAZIONE.md](INSTALLAZIONE.md) (Italian) for manual installation and
 troubleshooting steps.
+
+Optional step counts (iPhone + HealthSync): see "Passi dallo smartwatch o dal telefono" above.
 
 Set `modalita_demo: true` in the add-on configuration to seed about 30 days
 of synthetic data and try the UI without a real Glooko/Nightscout account.

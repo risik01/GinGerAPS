@@ -15,7 +15,7 @@ from .coordinator import CamapsDiaryCoordinator
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: CamapsDiaryCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: CamapsDiaryCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     async_add_entities([CamapsCollegamentoSensor(coordinator, entry)])
 
 

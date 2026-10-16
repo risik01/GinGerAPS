@@ -49,6 +49,13 @@ Dal terminale, con la CLI `ha`, i passi equivalenti sono:
 4. Apri **Diario CamAPS** dalla barra laterale, anche nell'app Home Assistant
    sul telefono.
 
+## 4. Passi (facoltativo)
+
+Vedi la sezione "Passi dallo smartwatch o dal telefono" nel README: HealthSync
+scrive i passi in `sensor.healthsync_NOME_steps_today`, un sensore modello
+`sensor.passi_giornalieri` li espone e l'opzione `passi_entity_id` dell'add-on
+li legge.
+
 ## Aggiornare a una nuova versione
 
 Sostituisci i file in `/addons/camaps_diary/`, poi nel negozio usa
