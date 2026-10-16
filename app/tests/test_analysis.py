@@ -79,3 +79,47 @@ def test_daily_summary_giorno_senza_letture_non_esplode(store):
     assert righe[0]["letture_cgm"] == 0
     assert righe[0]["media_mgdl"] is None
     assert righe[0]["tir_pct"] is None
+
+
+class TestStepsSummary:
+    """Sezione passi dedicata (richiesta dall'utente dopo un bug nel contatore
+    giornaliero): totale di periodo, media al giorno, totali settimanali, e
+    un totale a parte per l'anno in corso."""
+
+    def _insert_steps(self, store, coppie):
+        store.db.executemany(
+            "INSERT INTO activity_steps(giorno, passi, aggiornato_utc) VALUES (?, ?, '2026-01-01 00:00:00')",
+            coppie)
+        store.db.commit()
+
+    def test_totale_e_media_del_periodo(self, store):
+        self._insert_steps(store, [("2026-10-01", 1000), ("2026-10-02", 2000), ("2026-10-03", 3000)])
+        r = analysis.steps_summary(store, date(2026, 10, 1), date(2026, 10, 3))
+        assert r["totale_periodo"] == 6000
+        assert r["media_giorno"] == 2000
+        assert len(r["giorni"]) == 3
+
+    def test_periodo_senza_dati_non_esplode(self, store):
+        r = analysis.steps_summary(store, date(2026, 10, 1), date(2026, 10, 3))
+        assert r["totale_periodo"] == 0
+        assert r["media_giorno"] is None
+        assert r["giorni"] == []
+        assert r["per_settimana"] == []
+
+    def test_raggruppa_per_settimana_iso_lunedi_domenica(self, store):
+        # giovedi' 1/10/2026 e lunedi' 5/10/2026: settimane diverse
+        self._insert_steps(store, [("2026-10-01", 1000), ("2026-10-05", 2000)])
+        r = analysis.steps_summary(store, date(2026, 10, 1), date(2026, 10, 5))
+        assert len(r["per_settimana"]) == 2
+        prima, seconda = r["per_settimana"]
+        assert prima["da"] == "2026-09-28" and prima["totale"] == 1000
+        assert seconda["da"] == "2026-10-05" and seconda["totale"] == 2000
+
+    def test_anno_in_corso_indipendente_dal_periodo_scelto(self, store):
+        store.set("timezone", "Europe/Rome")
+        self._insert_steps(store, [("2026-01-10", 500), ("2026-06-15", 700), ("2026-10-01", 1000)])
+        # il periodo del report e' solo ottobre, ma l'anno in corso somma tutto il 2026
+        r = analysis.steps_summary(store, date(2026, 10, 1), date(2026, 10, 31))
+        assert r["anno_in_corso"]["anno"] == 2026
+        assert r["anno_in_corso"]["totale"] == 2200
+        assert r["anno_in_corso"]["giorni_con_dati"] == 3

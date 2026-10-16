@@ -1386,6 +1386,57 @@ async function loadAgp() {
   }
 }
 
+async function loadSteps() {
+  const to = state.today;
+  const from = addDays(to, -(state.trendDays - 1));
+  const figures = $('#steps-figures');
+  figures.innerHTML = '<div class="skeleton skeleton-figures"></div>';
+  try {
+    const r = await api(`api/passi?da=${from}&a=${to}`);
+    figures.innerHTML = `
+      <div><dt>Totale nel periodo</dt><dd class="act">${n0(r.totale_periodo)}</dd></div>
+      <div><dt>Media al giorno</dt><dd class="act">${r.media_giorno != null ? n0(r.media_giorno) : '–'}</dd></div>
+      <div><dt>Totale anno ${r.anno_in_corso.anno}</dt><dd class="act">${n0(r.anno_in_corso.totale)}
+        <span class="sub">su ${r.anno_in_corso.giorni_con_dati} giorni con dati</span></dd></div>`;
+    renderStepsChart(r.giorni);
+    $('#steps-table').innerHTML = `
+      <thead><tr><th>Settimana</th><th>Totale passi</th><th>Giorni con dati</th></tr></thead>
+      <tbody>${r.per_settimana.map((s) => `
+        <tr><td>${parseDay(s.da).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })} – `
+          + `${parseDay(s.a).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}</td>`
+          + `<td class="act">${n0(s.totale)}</td><td>${s.giorni_con_dati}</td></tr>`).join('')
+        || '<tr><td colspan="3" class="muted">Nessun dato sui passi nel periodo.</td></tr>'}</tbody>`;
+  } catch (err) {
+    figures.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+  }
+}
+
+function renderStepsChart(giorni) {
+  const box = $('#steps-chart');
+  if (!giorni.length) { box.innerHTML = ''; return; }
+  const W = Math.max(280, Math.round(box.clientWidth || 320));
+  const H = 90;
+  const m = { l: 36, r: 8, t: 6, b: 6 };
+  const pw = W - m.l - m.r;
+  const ph = H - m.t - m.b;
+  const top = Math.max(1000, ...giorni.map((g) => g.passi));
+  const bw = pw / giorni.length;
+  const out = [`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`];
+  for (const ref of [0, top / 2, top]) {
+    const yy = m.t + ph * (1 - ref / top);
+    out.push(`<line x1="${m.l}" x2="${m.l + pw}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`);
+    out.push(`<text x="${m.l - 4}" y="${(yy + 3).toFixed(1)}" class="axis" text-anchor="end">${n0(ref)}</text>`);
+  }
+  giorni.forEach((g, i) => {
+    const h = ph * (g.passi / top);
+    const x0 = m.l + i * bw;
+    out.push(`<rect x="${(x0 + bw * 0.12).toFixed(1)}" y="${(m.t + ph - h).toFixed(1)}" `
+      + `width="${(bw * 0.76).toFixed(1)}" height="${h.toFixed(1)}" class="act-bar"/>`);
+  });
+  out.push('</svg>');
+  box.innerHTML = out.join('');
+}
+
 function renderAgpChart(bins) {
   const box = $('#agp-chart');
   if (!bins.some((b) => b.n > 0)) {
@@ -1793,7 +1844,7 @@ function showTab(tab) {
   $('.app').scrollTop = 0;
   if (tab === 'giorno' || tab === 'pasti') loadDay();
   if (tab === 'calendario') loadCalendar();
-  if (tab === 'andamento') { loadTrend(); loadAgp(); loadWeekInsights(); }
+  if (tab === 'andamento') { loadTrend(); loadAgp(); loadWeekInsights(); loadSteps(); }
   if (tab === 'stato') setSettingsTab('stato');
 }
 
@@ -2269,6 +2320,7 @@ function bind() {
     $$('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     loadTrend();
     loadAgp();
+    loadSteps();
   }));
 
   // Report per il diabetologo

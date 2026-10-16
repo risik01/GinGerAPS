@@ -25,7 +25,8 @@ from . import foto
 from . import insights
 from . import off_import
 from . import report
-from .analysis import agp_profile, calendar_month, day_payload, food_occurrences, ha_snapshot, period_summary
+from .analysis import (agp_profile, calendar_month, day_payload, food_occurrences, ha_snapshot,
+                       period_summary, steps_summary)
 from .diary import (MEAL_TYPES, NOTE_KINDS, DiaryError, create_food, create_note, delete_food,
                     delete_meal, delete_note, food_by_barcode, frequent_foods, get_food, get_meal,
                     notes_for_day, save_meal, save_recipe, search_diary, search_foods, update_food)
@@ -537,6 +538,14 @@ def create_app(db_path: Path, syncer: Syncer | None, off: OpenFoodFacts, restric
         if day_from > day_to or (day_to - day_from).days > 366:
             abort(400, "Periodo non valido.")
         return jsonify(period_summary(g.store, day_from, day_to))
+
+    @app.get("/api/passi")
+    def passi_periodo():
+        day_to = _day(request.args.get("a"), today())
+        day_from = _day(request.args.get("da"), day_to - timedelta(days=13))
+        if day_from > day_to or (day_to - day_from).days > 366:
+            abort(400, "Periodo non valido.")
+        return jsonify(steps_summary(g.store, day_from, day_to))
 
     @app.get("/api/calendario")
     def calendario():

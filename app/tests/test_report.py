@@ -206,6 +206,10 @@ def _dati_minimi():
                               "glicemie": [[480, 110], [600, 160]],
                               "voci": [{"min": 600, "tipo": "bolo"}], "soglie": {"bassa": 70, "alta": 180},
                               "pasti": [{"ora": "13:00", "tipo": "Pranzo", "carbo_dichiarati_g": 75.0, "bolo_U": 5.0}]}],
+        "passi": {"giorni": [{"giorno": "2026-03-01", "passi": 6000}], "totale_periodo": 6000,
+                  "media_giorno": 6000, "per_settimana": [{"da": "2026-02-23", "a": "2026-03-01",
+                  "totale": 6000, "giorni_con_dati": 1}],
+                  "anno_in_corso": {"anno": 2026, "totale": 6000, "giorni_con_dati": 1}},
         "domande_visita": "",
         "consensus": report.CONSENSUS,
     }

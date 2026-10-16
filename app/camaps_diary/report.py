@@ -180,13 +180,14 @@ def day_blocks(store: Store, day_from: date, day_to: date, giorni_summary: list[
 
 def build_report_data(store: Store, day_from: date, day_to: date, kind: str,
                        domande_visita: str = "") -> dict:
-    from .analysis import period_summary
+    from .analysis import period_summary, steps_summary
     giorni = period_summary(store, day_from, day_to)
     blocchi = day_blocks(store, day_from, day_to, giorni)
     return {
         "generato": now_local(),
         "day_from": day_from, "day_to": day_to, "kind": kind,
         "giorni": giorni,
+        "passi": steps_summary(store, day_from, day_to),
         "metriche": period_metrics(giorni),
         "agp": agp_profile(store, day_from, day_to),
         "notevoli": notable_days(store, giorni),
@@ -273,6 +274,32 @@ def _day_svg(glicemie: list, voci: list, low: float, high: float) -> str:
             parts.append(f'<circle cx="{xx:.1f}" cy="{m["t"]-4}" r="2.5" fill="#c5433f"/>')
         else:
             parts.append(f'<circle cx="{xx:.1f}" cy="{m["t"]-4}" r="2" fill="#9a5f07"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _steps_svg(giorni: list[dict]) -> str:
+    """Barre dei passi di ogni giorno del periodo."""
+    if not giorni:
+        return ""
+    W, H = 600, 90
+    m = {"l": 36, "r": 8, "t": 6, "b": 16}
+    pw, ph = W - m["l"] - m["r"], H - m["t"] - m["b"]
+    valori = [g["passi"] for g in giorni]
+    top = max(1000, max(valori) if valori else 1000)
+    n = len(giorni)
+    bw = pw / n
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">']
+    for ref in (0, top / 2, top):
+        yy = m["t"] + ph * (1 - ref / top)
+        parts.append(f'<line x1="{m["l"]}" x2="{m["l"] + pw}" y1="{yy:.1f}" y2="{yy:.1f}" stroke="#e4e4e0"/>')
+        parts.append(f'<text x="{m["l"] - 4}" y="{yy + 3:.1f}" font-size="8" text-anchor="end" '
+                     f'fill="#6b6b63">{ref:.0f}</text>')
+    for i, g in enumerate(giorni):
+        h = ph * (g["passi"] / top)
+        x0 = m["l"] + i * bw
+        parts.append(f'<rect x="{x0 + bw * 0.12:.1f}" y="{m["t"] + ph - h:.1f}" width="{bw * 0.76:.1f}" '
+                     f'height="{h:.1f}" fill="#0e9f8e"/>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -395,6 +422,13 @@ def render_html(data: dict, soglie: dict) -> str:
 
     giorni_dettaglio_html = "".join(_day_detail_html(b, low, high) for b in data["giorni_dettaglio"])
 
+    passi = data["passi"]
+    settimane_html = "".join(
+        f"<tr><td>{_fmt_g(s['da'])} – {_fmt_g(s['a'])}</td><td>{num(s['totale'])}</td>"
+        f"<td>{s['giorni_con_dati']}</td></tr>"
+        for s in passi["per_settimana"]
+    ) or "<tr><td colspan='3' class='muted'>Nessun dato sui passi nel periodo.</td></tr>"
+
     domande = (f"<div class='visit-questions'><h3>Domande per la visita</h3>"
                f"<p>{esc(data['domande_visita'])}</p></div>") if data["domande_visita"] else ""
 
@@ -475,6 +509,20 @@ tr.in-attesa td {{ color: #6b6b63; font-style: italic; }}
   <div class="kpi"><dt>Carboidrati mangiati</dt><dd>{num(m['carbo_mangiati_g'], ' g')}</dd></div>
   <div class="kpi"><dt>Carboidrati in CamAPS</dt><dd>{num(m['carbo_camaps_g'], ' g')}</dd></div>
 </div>
+
+<h2>Passi</h2>
+<div class="kpis">
+  <div class="kpi"><dt>Totale nel periodo</dt><dd>{num(passi['totale_periodo'])}</dd></div>
+  <div class="kpi"><dt>Media al giorno</dt><dd>{num(passi['media_giorno'])}</dd></div>
+  <div class="kpi"><dt>Totale anno {passi['anno_in_corso']['anno']}</dt>
+    <dd>{num(passi['anno_in_corso']['totale'])}<span class="muted" style="font-size:9px;font-weight:400">
+      su {passi['anno_in_corso']['giorni_con_dati']} giorni con dati</span></dd></div>
+</div>
+{_steps_svg(passi['giorni'])}
+<table>
+<thead><tr><th>Settimana</th><th>Totale passi</th><th>Giorni con dati</th></tr></thead>
+<tbody>{settimane_html}</tbody>
+</table>
 
 <h2>Giorni del periodo</h2>
 {_week_grid_html(data['giorni'])}

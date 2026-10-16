@@ -18,7 +18,7 @@ from .camaps_entries import GlucoseIndex, classify
 from .diary import meals_between, notes_for_day
 from .stats import daily_summary
 from .store import Store
-from .timeutil import fmt_local, now_local, parse_local
+from .timeutil import DEFAULT_TZ, fmt_local, now_local, parse_local
 
 OCCURRENCE_BEFORE = timedelta(minutes=30)
 OCCURRENCE_AFTER = timedelta(minutes=180)
@@ -222,6 +222,48 @@ def _steps_by_day(store: Store, day_from: date, day_to: date) -> dict:
         "SELECT giorno, passi FROM activity_steps WHERE giorno >= ? AND giorno <= ?",
         (day_from.isoformat(), day_to.isoformat()))
     return {r["giorno"]: r["passi"] for r in rows}
+
+
+def steps_summary(store: Store, day_from: date, day_to: date) -> dict:
+    """Passi giorno per giorno nel periodo, totali per settimana, e un totale
+    a parte per l'anno in corso (indipendente dal periodo scelto): per la
+    sezione dedicata ai passi in Andamento e nel report, cosi' il numero
+    "di oggi" nella scheda Giorno non resta l'unico posto dove si vedono i
+    passi, come richiesto."""
+    rows = store.db.execute(
+        "SELECT giorno, passi FROM activity_steps WHERE giorno >= ? AND giorno <= ? ORDER BY giorno",
+        (day_from.isoformat(), day_to.isoformat())).fetchall()
+    giorni = [{"giorno": r["giorno"], "passi": r["passi"]} for r in rows]
+    valori = [g["passi"] for g in giorni]
+    totale_periodo = sum(valori)
+    media_giorno = round(totale_periodo / len(valori)) if valori else None
+
+    settimane: dict[str, dict] = {}
+    for g in giorni:
+        d = date.fromisoformat(g["giorno"])
+        lunedi = d - timedelta(days=d.weekday())
+        key = lunedi.isoformat()
+        sett = settimane.setdefault(key, {
+            "da": key, "a": (lunedi + timedelta(days=6)).isoformat(), "totale": 0, "giorni_con_dati": 0,
+        })
+        sett["totale"] += g["passi"]
+        sett["giorni_con_dati"] += 1
+    per_settimana = sorted(settimane.values(), key=lambda s: s["da"])
+
+    tz = store.get("timezone", DEFAULT_TZ)
+    oggi = now_local(tz).date()
+    inizio_anno = date(oggi.year, 1, 1)
+    anno_row = store.db.execute(
+        "SELECT COALESCE(SUM(passi), 0) AS tot, COUNT(*) AS n FROM activity_steps "
+        "WHERE giorno >= ? AND giorno <= ?", (inizio_anno.isoformat(), oggi.isoformat())).fetchone()
+
+    return {
+        "giorni": giorni,
+        "totale_periodo": totale_periodo,
+        "media_giorno": media_giorno,
+        "per_settimana": per_settimana,
+        "anno_in_corso": {"anno": oggi.year, "totale": anno_row["tot"], "giorni_con_dati": anno_row["n"]},
+    }
 
 
 def period_summary(store: Store, day_from: date, day_to: date) -> list[dict]:

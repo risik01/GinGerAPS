@@ -534,6 +534,11 @@ svg { display: block; }
 .seg button[aria-pressed="true"], .seg-report button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
 .seg button:active, .seg-report button:active { transform: scale(0.94); }
 
+.steps-zone { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+.steps-chart { width: 100%; margin: 6px 0 10px; }
+.steps-chart .act-bar { fill: var(--act); }
+.steps-chart .grid { stroke: var(--line); stroke-width: 1; }
+.steps-chart .axis { fill: var(--muted); font-size: 9px; font-family: "Space Grotesk", sans-serif; }
 .report-zone { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
 .report-zone .seg-report { margin: 10px 0 12px; }
 .report-result { margin-top: 12px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-md); }
