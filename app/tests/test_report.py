@@ -3,6 +3,7 @@
 from datetime import date, timedelta
 
 from camaps_diary import diary, report
+from camaps_diary import report_analisi as ra
 from camaps_diary.timeutil import fmt_local, parse_local
 
 
@@ -186,11 +187,28 @@ def test_day_blocks_include_giorni_senza_pasti_nel_dettaglio(store):
 
 # -- rendering HTML e PDF -------------------------------------------------------
 
+_NUTRI_PRANZO = {"carbo": 75.0, "kcal": 420.0, "proteine": 12.0, "grassi": 30.0, "zuccheri": 4.0,
+                 "fibra": 3.0, "senza_dato": {"kcal": 0, "proteine": 0, "grassi": 0}, "voci": 1}
+_PASTO_PRANZO = {"ora": "13:00", "tipo": "Pranzo", "tipo_key": "pranzo", "carbo_dichiarati_g": 75.0,
+                 "carbo_diario_g": 75.0, "carbo_camaps_g": 70.0, "bolo_U": 5.0, "picco": 240,
+                 "glicemia_inizio": 110, "picco_2h": 200, "in_attesa": False, "nutrienti": _NUTRI_PRANZO,
+                 "voci": [{"descrizione": "Pasta", "grammi": 100, "carbo_g": 75.0, "ia": False,
+                           "nutrienti": {"kcal": 420.0, "proteine": 12.0, "grassi": 30.0, "zuccheri": 4.0, "fibra": 3.0}}]}
+
+
 def _dati_minimi():
+    d = _dati_base()
+    d["notevoli"] = ra.arricchisci_notevoli(d["notevoli"], d["giorni_dettaglio"], d["giorni"], d["metriche"],
+                                            {"bassa": 70, "alta": 180})
+    d["consigli"] = ra.costruisci_consigli(d["giorni_dettaglio"], d["giorni"], d["metriche"], {"bassa": 70, "alta": 180})
+    return d
+
+
+def _dati_base():
     return {
         "generato": parse_local("2026-03-15 10:00:00"),
         "day_from": date(2026, 3, 1), "day_to": date(2026, 3, 14), "kind": "14gg",
-        "giorni": [{"giorno": "2026-03-01", "tir_pct": 80, "copertura_cgm_pct": 90}],
+        "giorni": [{"giorno": "2026-03-01", "tir_pct": 80, "copertura_cgm_pct": 90, "passi": 6000}],
         "metriche": {"giorni_totali": 14, "giorni_con_dati": 10, "media_mgdl": 140,
                      "gmi_pct": 6.7, "cv_pct": 30.0, "tir_pct": 75.0, "sotto_pct": 3.0,
                      "molto_sotto_pct": 0.5, "sopra_pct": 22.0, "molto_sopra_pct": 4.0,
@@ -205,7 +223,8 @@ def _dati_minimi():
         "giorni_dettaglio": [{"giorno": "2026-03-01", "riepilogo": {"tir_pct": 80, "media_mgdl": 140, "passi": 6000},
                               "glicemie": [[480, 110], [600, 160]],
                               "voci": [{"min": 600, "tipo": "bolo"}], "soglie": {"bassa": 70, "alta": 180},
-                              "pasti": [{"ora": "13:00", "tipo": "Pranzo", "carbo_dichiarati_g": 75.0, "bolo_U": 5.0}]}],
+                              "nutrienti": _NUTRI_PRANZO,
+                              "pasti": [_PASTO_PRANZO]}],
         "passi": {"giorni": [{"giorno": "2026-03-01", "passi": 6000}], "totale_periodo": 6000,
                   "media_giorno": 6000, "per_settimana": [{"da": "2026-02-23", "a": "2026-03-01",
                   "totale": 6000, "giorni_con_dati": 1}],
@@ -261,3 +280,51 @@ def test_list_reports_ordina_dal_piu_recente(store, tmp_path):
     lista = report.list_reports(store)
     assert lista[0]["id"] == b["id"]
     assert lista[1]["id"] == a["id"]
+
+
+# -- diario alimentare, giorni notevoli arricchiti e consigli --------------------
+
+def test_render_html_ha_diario_alimentare_con_alimenti_e_macro():
+    html = report.render_html(_dati_minimi(), {"bassa": 70, "alta": 180})
+    assert "Diario alimentare" in html
+    assert "Pasta" in html and "420" in html
+    assert "<circle" in html  # ciambella
+    assert "Insulina e glicemia" in html and "bolo 5.0 U" in html
+
+
+def test_render_html_ha_pagina_consigli_senza_dosi():
+    html = report.render_html(_dati_minimi(), {"bassa": 70, "alta": 180})
+    assert "Consigli per migliorare" in html
+    assert "non contengono dosi di insulina" in html
+    assert "Alimenti da limitare" in html  # pasto con 30 g di grassi
+
+
+def test_consigli_senza_pasti_restano_generali_e_non_citano_dati():
+    blocchi = [{"giorno": "2026-03-01", "riepilogo": {}, "glicemie": [], "voci": [], "pasti": [], "nutrienti": {}}]
+    c = ra.costruisci_consigli(blocchi, [], {}, {"alta": 180})
+    assert c["ha_dati_cibo"] is False
+    assert all(v["base"] is None or "registrat" in v["base"] for s in c["sezioni"] for v in s["voci"])
+
+
+def test_notevole_ipo_spiega_bolo_e_pasto_precedenti():
+    pasto = dict(_PASTO_PRANZO)
+    blocco = {"giorno": "2026-03-01", "riepilogo": {"passi": 12000},
+              "glicemie": [[900, 60], [905, 52], [910, 50], [915, 53], [920, 70]],
+              "voci": [{"tipo": "bolo", "min": 800, "ora": "13:20", "U": 5.0, "carbo_g": 70}],
+              "pasti": [pasto], "nutrienti": _NUTRI_PRANZO}
+    out = ra.arricchisci_notevoli([{"giorno": "2026-03-01", "tipo": "ipo", "dettaglio": "x", "note": []}],
+                                  [blocco], [], {"passi": 6000}, {"alta": 180})
+    testo = " ".join(out[0]["rilevato"])
+    assert "Minimo 50 mg/dL" in testo and "Ultimo bolo" in testo and "5 U" in testo
+    assert "Pasto nelle 5 ore precedenti" in testo and "più attiva" in testo
+
+
+def test_pipeline_reale_dati_e_render(store):
+    pasta = diary.create_food(store, {"nome": "Pasta", "carbo_100g": 75, "kcal_100g": 350, "grassi_100g": 2,
+                                      "proteine_100g": 12})
+    _fill_day_cgm(store, "2026-03-01", mgdl=130)
+    diary.save_meal(store, {"ora": "2026-03-01T13:00", "tipo": "pranzo",
+                            "voci": [{"alimento_id": pasta["id"], "grammi": 100}]})
+    data = report.build_report_data(store, date(2026, 3, 1), date(2026, 3, 1), "1gg")
+    html = report.render_html(data, {"bassa": 70, "alta": 180})
+    assert "Pasta" in html and "Consigli per migliorare" in html

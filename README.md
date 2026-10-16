@@ -27,7 +27,10 @@ Non sostituisce il parere del tuo diabetologo.
 - **Andamento**: profilo AGP, insight settimanali in linguaggio semplice
   (variazione rispetto alla settimana prima, fasce orarie critiche, pasto con
   la risposta migliore/peggiore — tutte osservazioni descrittive, mai
-  indicazioni di dose), report PDF per il diabetologo.
+  indicazioni di dose), report PDF per il diabetologo con diario alimentare
+  (calorie, macro e insulina per giorno, pasto e alimento, con grafici), giorni
+  notevoli spiegati dai dati e una pagina di consigli alimentari generali
+  (mai dosi né terapia).
 - **Impostazioni**: scelta della sorgente dati (Glooko, Nightscout, xDrip+)
   con test di connessione, database alimenti personale.
 - **Integrazione Home Assistant** (`custom_components/camaps_diary`): sensori
